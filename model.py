@@ -82,8 +82,8 @@ elif page == "Detailed User Insights":
             st.plotly_chart(fig_subject)
 
             st.subheader("📈 License Consumption Trend")
-            license_trend = user_license.groupby('event_date').size().reset_index(name='licenses_consumed')
-            fig_license_trend = px.line(license_trend, x='event_date', y='licenses_consumed', title='License Consumption Over Time')
+            license_trend = user_license.groupby('date').size().reset_index(name='licenses_consumed')
+            fig_license_trend = px.line(license_trend, x='date', y='licenses_consumed', title='License Consumption Over Time')
             st.plotly_chart(fig_license_trend)
 
             st.subheader("📝 Completion Status")
