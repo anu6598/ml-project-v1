@@ -86,10 +86,7 @@ elif page == "Detailed User Insights":
             fig_license_trend = px.line(license_trend, x='date', y='licenses_consumed', title='License Consumption Over Time')
             st.plotly_chart(fig_license_trend)
 
-            st.subheader("📝 Completion Status")
-            completion = user_playback.groupby('_subject_title')['percentage'].mean().reset_index()
-            fig_completion = px.bar(completion, x='Subject', y='percentage', title='Subject Completion Status')
-            st.plotly_chart(fig_completion)
+            
 
 elif page == "Overall License Consumption":
     st.header("🔒 Overall License Consumption Patterns")
