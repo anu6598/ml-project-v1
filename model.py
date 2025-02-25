@@ -76,7 +76,7 @@ if user_id_input:
 
         # Fast vs. Slow Finisher
         st.subheader("Finisher Category")
-        total_lessons = user_playback['lesson_id'].nunique()
+        total_lessons = user_playback['_lesson_id'].nunique()
         completed_lessons = user_playback[user_playback['percentage'] >= 85]['lesson_id'].nunique()
         finisher_type = "Fast Finisher" if completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
         st.success(f"This user is categorized as a: {finisher_type}")
