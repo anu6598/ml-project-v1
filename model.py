@@ -2,68 +2,101 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Load data
-def load_data(uploaded_file):
-    if uploaded_file is not None:
-        df = pd.read_csv(MLSheet1.csv)
-        return df
-    return None
+# Load datasets (replace with actual file paths or database connections)
+@st.cache_data
+def load_data():
+    playback_data = pd.read_csv("video_playback_data.csv")
+    license_data = pd.read_csv("license_consumption_data.csv")
+    return playback_data, license_data
 
-# User Segmentation based on completion and event dates
-def segment_users(df):
-    user_completion = df.groupby(['user_id', 'lesson_id']).agg({
-        'percentage': 'mean',
-        'event_date': pd.Series.nunique
-    }).reset_index()
+playback_data, license_data = load_data()
 
-    user_summary = user_completion.groupby('user_id').agg({
-        'percentage': 'mean',
-        'event_date': 'sum'
-    }).reset_index()
+# Title and Input
+st.title("User Insights Dashboard: Playback & License Consumption")
+user_id_input = st.text_input("Enter User ID to view details:")
 
-    user_summary['segment'] = user_summary.apply(
-        lambda x: 'Fast Finisher' if x['percentage'] >= 85 and x['event_date'] <= user_summary['event_date'].quantile(0.25)
-        else ('Slow Finisher' if x['percentage'] >= 85 else 'Regular'), axis=1)
+if user_id_input:
+    # Filter user data
+    user_playback = playback_data[playback_data['user_id'] == user_id_input]
+    user_license = license_data[license_data['user_id'] == user_id_input]
 
-    return user_summary
-
-# Visualize user journey for a selected user
-def user_journey(df, user_id):
-    user_data = df[df['user_id'] == user_id].sort_values('event_date')
-    fig = px.line(user_data, x='event_date', y='percentage', color='topic_title',
-                  title=f'Learning Journey for User {user_id}')
-    st.plotly_chart(fig)
-
-# Main Streamlit app
-def main():
-    st.title("User Segmentation & Study Journey Analysis - NEET PG & FMGE")
-
-    uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
-    df = load_data(uploaded_file)
-
-    if df is not None:
-        st.subheader("User Segmentation")
-        user_summary = segment_users(df)
-        st.dataframe(user_summary)
-
-        segment_counts = user_summary['segment'].value_counts().reset_index()
-        fig_seg = px.pie(segment_counts, values='segment', names='index',
-                         title='User Segmentation Overview')
-        st.plotly_chart(fig_seg)
-
-        st.subheader("User Journey Visualization")
-        user_list = df['user_id'].unique()
-        selected_user = st.selectbox("Select a User ID", user_list)
-        user_journey(df, selected_user)
-
-        st.subheader("Fast vs Slow Finishers Distribution")
-        fig_dist = px.histogram(user_summary, x='event_date', color='segment',
-                                title='Completion Speed Distribution')
-        st.plotly_chart(fig_dist)
-
-        st.success("Analysis complete. Adjust filters for more insights.")
+    if user_playback.empty and user_license.empty:
+        st.warning("No data found for the given User ID.")
     else:
-        st.info("Please upload a dataset to proceed.")
+        st.header(f"Insights for User ID: {user_id_input}")
 
-if __name__ == "__main__":
-    main()
+        # Playback summary
+        st.subheader("Playback Summary")
+        total_hours = user_playback['actual_hours'].sum()
+        st.metric("Total Hours Watched", f"{total_hours:.2f} hours")
+
+        subject_wise = user_playback.groupby('_subject_title')['actual_hours'].sum().reset_index()
+        fig_subject = px.bar(subject_wise, x='_subject_title', y='actual_hours', title='Hours Watched per Subject')
+        st.plotly_chart(fig_subject)
+
+        # Viewing Pattern
+        st.subheader("Viewing Pattern Over Time")
+        user_playback['event_date'] = pd.to_datetime(user_playback['event_date'])
+        daily_view = user_playback.groupby('event_date')['actual_hours'].sum().reset_index()
+        fig_timeline = px.line(daily_view, x='event_date', y='actual_hours', title='Daily Viewing Trend')
+        st.plotly_chart(fig_timeline)
+
+        # License consumption summary
+        st.subheader("License Consumption Summary")
+        license_count = user_license.shape[0]
+        st.metric("Total Licenses Consumed", f"{license_count}")
+
+        platform_usage = user_license['platform'].value_counts().reset_index()
+        platform_usage.columns = ['Platform', 'Count']
+        fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage Distribution')
+        st.plotly_chart(fig_platform)
+
+        # Device & Location Insights
+        st.subheader("Device and Region Insights")
+        device_count = user_playback['_d_id'].nunique()
+        region_count = user_playback['_region'].nunique()
+        st.metric("Unique Devices", device_count)
+        st.metric("Regions Accessed", region_count)
+
+        # Innovative Ideas Section
+        st.subheader("User Journey Insights")
+        subject_order = (
+            user_playback.groupby(['_subject_title', 'lesson_id'])
+            .agg({'event_date': 'min'})
+            .reset_index()
+            .sort_values('event_date')
+        )
+        st.dataframe(subject_order, use_container_width=True)
+
+        st.subheader("Completion Status")
+        completion = user_playback.groupby('_subject_title')['percentage'].mean().reset_index()
+        completion.columns = ['Subject', 'Avg Completion %']
+        fig_completion = px.bar(completion, x='Subject', y='Avg Completion %', title='Subject Completion Status')
+        st.plotly_chart(fig_completion)
+
+        # Fast vs. Slow Finisher
+        st.subheader("Finisher Category")
+        total_lessons = user_playback['lesson_id'].nunique()
+        completed_lessons = user_playback[user_playback['percentage'] >= 85]['lesson_id'].nunique()
+        finisher_type = "Fast Finisher" if completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
+        st.success(f"This user is categorized as a: {finisher_type}")
+
+        # Flexible Query Section
+        st.subheader("Ask a Custom Question")
+        query = st.text_input("Type your question here:")
+
+        def answer_query(q):
+            q = q.lower()
+            if "top most viewed subject" in q:
+                top_subject = subject_wise.sort_values("actual_hours", ascending=False).iloc[0]['_subject_title']
+                return f"Top most viewed subject: {top_subject}" 
+            elif "total hours" in q:
+                return f"Total hours watched: {total_hours:.2f} hours"
+            else:
+                return "Query not recognized. Please try a different question."
+
+        if query:
+            st.info(answer_query(query))
+
+else:
+    st.info("Please enter a User ID to load insights.")
