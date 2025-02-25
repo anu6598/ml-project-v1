@@ -13,53 +13,45 @@ def load_data():
 
 playback_data, license_data = load_data()
 
-# Page Configuration
-st.set_page_config(page_title="User Insights Platform", layout="wide")
+st.set_page_config(page_title="User Insights Dashboard", layout="wide")
 
-# Custom CSS for website-like UI
 st.markdown("""
     <style>
-        .main { background-color: #f9fbfd; }
-        .stApp { background-image: linear-gradient(to right, #dde7f0, #e9f1fa); color: black; }
-        .css-1d391kg .st-bh {background: transparent;}
-        .css-1v0mbdj {color: black;}
+        .main { background-color: #f5f7fa; }
+        .stApp { background-image: linear-gradient(to right, #a1c4fd, #c2e9fb); color: black; }
     </style>
 """, unsafe_allow_html=True)
 
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", ["User Segmentation Overview", "User Insights", "License Consumption Overview"])
+menu = st.sidebar.selectbox("Navigate", [
+    "User Segmentation Overview",
+    "Detailed User Insights",
+    "Overall License Consumption"
+])
 
-# ML-based User Segmentation
-seg_data = playback_data.groupby('user_id').agg({
-    'event_date': 'min',
-    '_lesson_id': 'nunique',
-    '_pause': 'sum',
-    '_seek': 'sum'
-}).reset_index()
-
-seg_data['completion_days'] = (pd.to_datetime(playback_data['event_date']).max() - pd.to_datetime(seg_data['event_date'])).dt.days
-seg_data['completion_score'] = seg_data['_lesson_id'] / seg_data['completion_days'].replace(0, np.nan)
-
-seg_data['Category'] = np.where(
-    (seg_data['completion_score'] > 0.5) & (seg_data['_pause'] < 5) & (seg_data['_seek'] < 5), "Highly Suspicious",
-    np.where((seg_data['completion_score'] > 0.3) & (seg_data['_pause'] < 10) & (seg_data['_seek'] < 10), "Suspicious", "Normal User")
-)
-
-# Page 1: Segmentation Overview
-if page == "User Segmentation Overview":
+if menu == "User Segmentation Overview":
     st.title("User Segmentation Overview")
-    st.markdown("### Explore user categories based on their interaction and completion patterns.")
+    seg_data = playback_data.groupby('user_id').agg({
+        'event_date': 'min',
+        '_lesson_id': 'nunique',
+        '_pause': 'sum',
+        '_seek': 'sum'
+    }).reset_index()
 
-    for category in ["Highly Suspicious", "Suspicious", "Normal User"]:
+    seg_data['completion_score'] = seg_data['_lesson_id'] / (
+        (pd.to_datetime(playback_data['event_date']).max() - pd.to_datetime(seg_data['event_date'])).dt.days + 1
+    )
+    kmeans = KMeans(n_clusters=3, random_state=0)
+    seg_data['segment'] = kmeans.fit_predict(seg_data[['completion_score', '_pause', '_seek']])
+
+    segment_labels = {0: "Highly Suspicious", 1: "Suspicious", 2: "Normal User"}
+    seg_data['Category'] = seg_data['segment'].map(segment_labels)
+
+    for category in segment_labels.values():
         st.subheader(f"{category} Users")
-        user_list = seg_data[seg_data['Category'] == category]['user_id'].tolist()
-        st.write(f"**Count:** {len(user_list)}")
-        st.json(user_list)
+        st.write(seg_data[seg_data['Category'] == category]['user_id'].tolist())
 
-# Page 2: User-specific Insights
-elif page == "User Insights":
-    st.title("Detailed User Insights")
+elif menu == "Detailed User Insights":
+    st.title("Detailed Insights for a Specific User")
     user_id_input = st.text_input("Enter User ID:")
 
     if user_id_input:
@@ -69,7 +61,10 @@ elif page == "User Insights":
         if user_playback.empty and user_license.empty:
             st.warning("No data found for the given User ID.")
         else:
-            st.subheader(f"Playback Summary for {user_id_input}")
+            st.header(f"Insights for User ID: {user_id_input}")
+
+            # Playback Summary
+            st.subheader("Playback Summary")
             total_hours = user_playback['actual_hours'].sum()
             st.metric("Total Hours Watched", f"{total_hours:.2f} hours")
 
@@ -77,29 +72,80 @@ elif page == "User Insights":
             fig_subject = px.bar(subject_wise, x='_subject_title', y='actual_hours', title='Hours Watched per Subject')
             st.plotly_chart(fig_subject)
 
-            st.subheader("License Consumption Pattern")
+            # License Consumption
+            st.subheader("License Consumption Patterns")
             license_count = user_license.shape[0]
             st.metric("Total Licenses Consumed", f"{license_count}")
 
             platform_usage = user_license['platform'].value_counts().reset_index()
             platform_usage.columns = ['Platform', 'Count']
-            fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage')
+            fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage Distribution')
             st.plotly_chart(fig_platform)
 
-# Page 3: Overall License Consumption
-elif page == "License Consumption Overview":
-    st.title("Overall License Consumption Overview")
-    st.markdown("### Analyze general trends in license consumption across all users.")
+            # User Journey Insights
+            st.subheader("User Journey Insights")
+            subject_order = (
+                user_playback.groupby(['_subject_title', '_lesson_id'])
+                .agg({'event_date': 'min'})
+                .reset_index()
+                .sort_values('event_date')
+            )
+            st.dataframe(subject_order, use_container_width=True)
 
-    total_licenses = license_data.shape[0]
-    st.metric("Total Licenses Issued", total_licenses)
+            # Completion Status
+            st.subheader("Completion Status")
+            completion = user_playback.groupby('_subject_title')['percentage'].mean().reset_index()
+            completion.columns = ['Subject', 'Avg Completion %']
+            fig_completion = px.bar(completion, x='Subject', y='Avg Completion %', title='Subject Completion Status')
+            st.plotly_chart(fig_completion)
 
-    platform_dist = license_data['platform'].value_counts().reset_index()
-    platform_dist.columns = ['Platform', 'Count']
-    fig_all_platforms = px.pie(platform_dist, names='Platform', values='Count', title='Platform Usage Distribution')
-    st.plotly_chart(fig_all_platforms)
+            # Finisher Category
+            st.subheader("Finisher Category")
+            total_lessons = user_playback['_lesson_id'].nunique()
+            completed_lessons = user_playback[user_playback['percentage'] >= 85]['_lesson_id'].nunique()
+            finisher_type = "Fast Finisher" if completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
+            st.success(f"This user is categorized as a: {finisher_type}")
 
-    region_dist = license_data['_region'].value_counts().reset_index()
-    region_dist.columns = ['Region', 'Count']
-    fig_region = px.bar(region_dist, x='Region', y='Count', title='Region-wise License Distribution')
+            # Custom Query Section
+            st.subheader("Ask a Custom Question")
+            query = st.text_input("Type your question here:")
+
+            def answer_query(q):
+                q = q.lower()
+                if "top most viewed subject" in q:
+                    top_subject = subject_wise.sort_values("actual_hours", ascending=False).iloc[0]['_subject_title']
+                    return f"Top most viewed subject: {top_subject}"
+                elif "total hours" in q:
+                    return f"Total hours watched: {total_hours:.2f} hours"
+                else:
+                    return "Query not recognized. Please try a different question."
+
+            if query:
+                st.info(answer_query(query))
+    else:
+        st.info("Please enter a User ID to load insights.")
+
+elif menu == "Overall License Consumption":
+    st.title("Overall License Consumption Patterns")
+    
+    st.subheader("License Consumption by Platform")
+    platform_usage = license_data['platform'].value_counts().reset_index()
+    platform_usage.columns = ['Platform', 'Count']
+    fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage Distribution')
+    st.plotly_chart(fig_platform)
+
+    st.subheader("License Consumption by Region")
+    region_usage = license_data['_region'].value_counts().reset_index()
+    region_usage.columns = ['Region', 'Count']
+    fig_region = px.bar(region_usage, x='Region', y='Count', title='Region-wise License Consumption')
     st.plotly_chart(fig_region)
+
+    st.subheader("Overall Trends")
+    monthly_trend = (
+        license_data.groupby(pd.to_datetime(license_data['event_date']).dt.to_period('M'))
+        .size()
+        .reset_index(name='License_Count')
+    )
+    monthly_trend['event_date'] = monthly_trend['event_date'].astype(str)
+    fig_trend = px.line(monthly_trend, x='event_date', y='License_Count', title='Monthly License Consumption Trend')
+    st.plotly_chart(fig_trend)
