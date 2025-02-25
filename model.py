@@ -28,12 +28,12 @@ st.title("User Insights Dashboard: Playback & License Consumption")
 st.subheader("User Segmentation Based on Completion Speed & Interaction")
 seg_data = playback_data.groupby('user_id').agg({
     'event_date': 'min',
-    'lesson_id': 'nunique',
+    '_lesson_id': 'nunique',
     '_pause': 'sum',
     '_seek': 'sum'
 }).reset_index()
 
-seg_data['completion_score'] = seg_data['lesson_id'] / (pd.to_datetime(playback_data['event_date']).max() - pd.to_datetime(seg_data['event_date'])).dt.days
+seg_data['completion_score'] = seg_data['_lesson_id'] / (pd.to_datetime(playback_data['event_date']).max() - pd.to_datetime(seg_data['event_date'])).dt.days
 kmeans = KMeans(n_clusters=4, random_state=0)
 seg_data['segment'] = kmeans.fit_predict(seg_data[['completion_score', '_pause', '_seek']])
 
@@ -81,7 +81,7 @@ if user_id_input:
 
         st.subheader("User Journey Insights")
         subject_order = (
-            user_playback.groupby(['_subject_title', 'lesson_id'])
+            user_playback.groupby(['_subject_title', '_lesson_id'])
             .agg({'event_date': 'min'})
             .reset_index()
             .sort_values('event_date')
@@ -96,8 +96,8 @@ if user_id_input:
         st.plotly_chart(fig_completion)
 
         st.subheader("Finisher Category")
-        total_lessons = user_playback['lesson_id'].nunique()
-        completed_lessons = user_playback[user_playback['percentage'] >= 85]['lesson_id'].nunique()
+        total_lessons = user_playback['_lesson_id'].nunique()
+        completed_lessons = user_playback[user_playback['percentage'] >= 85]['_lesson_id'].nunique()
         finisher_type = "Fast Finisher" if completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
         st.success(f"This user is categorized as a: {finisher_type}")
 
