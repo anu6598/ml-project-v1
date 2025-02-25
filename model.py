@@ -61,7 +61,7 @@ if user_id_input:
         # Innovative Ideas Section
         st.subheader("User Journey Insights")
         subject_order = (
-            user_playback.groupby(['_subject_title', 'lesson_id'])
+            user_playback.groupby(['_subject_title', '_lesson_id'])
             .agg({'event_date': 'min'})
             .reset_index()
             .sort_values('event_date')
