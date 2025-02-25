@@ -134,11 +134,7 @@ elif menu == "Overall License Consumption":
     fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage Distribution')
     st.plotly_chart(fig_platform)
 
-    st.subheader("License Consumption by Region")
-    region_usage = license_data['_city'].value_counts().reset_index()
-    region_usage.columns = ['Region', 'Count']
-    fig_region = px.bar(region_usage, x='Region', y='Count', title='Region-wise License Consumption')
-    st.plotly_chart(fig_region)
+
 
     st.subheader("Overall Trends")
     monthly_trend = (
