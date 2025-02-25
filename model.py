@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from sklearn.cluster import KMeans
 import numpy as np
 
 # Load datasets (replace with actual file paths or database connections)
@@ -13,18 +12,22 @@ def load_data():
 
 playback_data, license_data = load_data()
 
-# Title and Input
+# Updated background color for better text visibility
 st.markdown("""
     <style>
-        .main { background-color: #f0f2f6; }
-        .stApp { background-image: linear-gradient(to right, #6a11cb, #2575fc); color: white; }
+        .main { background-color: #f8f9fc; }
+        .stApp {
+            background-image: linear-gradient(to right, #d3cce3, #e9e4f0);
+            color: #222222;
+        }
         .css-1d391kg .st-bh {background: transparent;}
     </style>
 """, unsafe_allow_html=True)
 
 st.title("User Insights Dashboard: Playback & License Consumption")
 
-# Data preprocessing for segmentation
+# Updated User Segregation Based on Explicit Conditions
+st.subheader("User Segmentation Based on Completion Speed & Interaction")
 seg_data = playback_data.groupby('user_id').agg({
     'event_date': 'min',
     '_lesson_id': 'nunique',
@@ -32,32 +35,24 @@ seg_data = playback_data.groupby('user_id').agg({
     '_seek': 'sum'
 }).reset_index()
 
-seg_data['event_date'] = pd.to_datetime(seg_data['event_date'], errors='coerce')
-seg_data.dropna(subset=['event_date'], inplace=True)
-seg_data['days_to_complete'] = (pd.to_datetime(playback_data['event_date']).max() - seg_data['event_date']).dt.days
-seg_data['days_to_complete'].replace(0, 1, inplace=True)
-seg_data['completion_score'] = seg_data['_lesson_id'] / seg_data['days_to_complete']
+seg_data['completion_score'] = seg_data['_lesson_id'] / (
+    (pd.to_datetime(playback_data['event_date']).max() - pd.to_datetime(seg_data['event_date'])).dt.days + 1)
 
-# Handle infinite and NaN values
-seg_data.replace([np.inf, -np.inf], np.nan, inplace=True)
-seg_data.dropna(subset=['completion_score', '_pause', '_seek'], inplace=True)
+# Updated category logic based on defined thresholds
+def categorize_user(row):
+    if row['completion_score'] >= 0.8 and row['_pause'] < 5 and row['_seek'] < 5:
+        return "Highly Suspicious"
+    elif row['completion_score'] >= 0.6 and row['_pause'] < 10 and row['_seek'] < 10:
+        return "Mild Suspicious"
+    elif row['completion_score'] >= 0.4:
+        return "Moderate User"
+    else:
+        return "Normal User"
 
-# ML-based User Segmentation
-kmeans = KMeans(n_clusters=4, random_state=0, n_init=10)
-seg_data['segment'] = kmeans.fit_predict(seg_data[['completion_score', '_pause', '_seek']])
+seg_data['Category'] = seg_data.apply(categorize_user, axis=1)
 
-segment_labels = {
-    0: "Highly Suspicious (Fast completion, pause < 5, seek < 5)",
-    1: "Mild Suspicious (Medium completion, pause < 10, seek < 10)",
-    2: "Moderate User",
-    3: "Normal User"
-}
-seg_data['Category'] = seg_data['segment'].map(segment_labels)
-
-st.subheader("User Segmentation Based on Completion Speed & Interaction")
-for category in segment_labels.values():
-    users_list = seg_data[seg_data['Category'] == category]['user_id'].tolist()
-    st.write(f"**{category}:**", users_list if users_list else "No users in this category.")
+for category in seg_data['Category'].unique():
+    st.write(f"**{category}:**", seg_data[seg_data['Category'] == category]['user_id'].tolist())
 
 # User specific insights
 user_id_input = st.text_input("Enter User ID to view details:")
@@ -78,7 +73,7 @@ if user_id_input:
         subject_wise = user_playback.groupby('_subject_title')['actual_hours'].sum().reset_index()
         fig_subject = px.bar(subject_wise, x='_subject_title', y='actual_hours', title='Hours Watched per Subject')
         fig_subject.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_subject, use_container_width=True)
+        st.plotly_chart(fig_subject)
 
         st.subheader("License Consumption Patterns")
         license_count = user_license.shape[0]
@@ -88,7 +83,7 @@ if user_id_input:
         platform_usage.columns = ['Platform', 'Count']
         fig_platform = px.pie(platform_usage, names='Platform', values='Count', title='Platform Usage Distribution')
         fig_platform.update_layout(paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_platform, use_container_width=True)
+        st.plotly_chart(fig_platform)
 
         st.subheader("User Journey Insights")
         subject_order = (
@@ -104,12 +99,12 @@ if user_id_input:
         completion.columns = ['Subject', 'Avg Completion %']
         fig_completion = px.bar(completion, x='Subject', y='Avg Completion %', title='Subject Completion Status')
         fig_completion.update_layout(paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_completion, use_container_width=True)
+        st.plotly_chart(fig_completion)
 
         st.subheader("Finisher Category")
         total_lessons = user_playback['_lesson_id'].nunique()
         completed_lessons = user_playback[user_playback['percentage'] >= 85]['_lesson_id'].nunique()
-        finisher_type = "Fast Finisher" if total_lessons > 0 and completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
+        finisher_type = "Fast Finisher" if completed_lessons / total_lessons >= 0.8 else "Slow Finisher"
         st.success(f"This user is categorized as a: {finisher_type}")
 
         st.subheader("Ask a Custom Question")
@@ -118,11 +113,8 @@ if user_id_input:
         def answer_query(q):
             q = q.lower()
             if "top most viewed subject" in q:
-                if not subject_wise.empty:
-                    top_subject = subject_wise.sort_values("actual_hours", ascending=False).iloc[0]['_subject_title']
-                    return f"Top most viewed subject: {top_subject}"
-                else:
-                    return "No subject data available."
+                top_subject = subject_wise.sort_values("actual_hours", ascending=False).iloc[0]['_subject_title']
+                return f"Top most viewed subject: {top_subject}" 
             elif "total hours" in q:
                 return f"Total hours watched: {total_hours:.2f} hours"
             else:
