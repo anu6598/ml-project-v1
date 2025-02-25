@@ -11,4 +11,8 @@ statsmodels
 streamlit-aggrid 
 pyarrow 
 joblib
+streamlit
+pandas
+numpy
+plotly
 
