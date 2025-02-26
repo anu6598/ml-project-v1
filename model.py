@@ -82,7 +82,7 @@ elif page == "Detailed User Analysis":
 
             st.subheader("License Consumption Over Time")
             if not user_license.empty:
-                user_license['date'] = pd.to_datetime(user_license['event_date'])
+                user_license['date'] = pd.to_datetime(user_license['date'])
                 license_trend = user_license.groupby('date').size().reset_index(name='licenses')
                 fig_license = px.line(license_trend, x='date', y='licenses',
                                       title='License Consumption Trend')
