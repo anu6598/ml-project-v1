@@ -144,9 +144,9 @@ elif page == "Detailed User Analysis":
 
 elif page == "Overall License Consumption":
     st.header("Overall License Consumption Patterns")
-    license_data['event_date'] = pd.to_datetime(license_data['event_date'])
+    license_data['date'] = pd.to_datetime(license_data['date'])
     overall_license_trend = license_data.groupby('event_date').size().reset_index(name='licenses')
-    fig_overall_license = px.line(overall_license_trend, x='event_date', y='licenses',
+    fig_overall_license = px.line(overall_license_trend, x='date', y='licenses',
                                   title='Overall License Consumption Over Time')
     st.plotly_chart(fig_overall_license)
 
