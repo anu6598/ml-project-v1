@@ -47,10 +47,10 @@ if page == "📊 Video Usage Trends":
     if uploaded_file is not None:
         df, _ = load_and_preprocess(uploaded_file)
         
-        # Subject-wise total actual hours
-        subject_hours = df.groupby('subject_title')['actual_hours'].sum().nlargest(5)
-        st.subheader("📌 Top 5 Subjects by Watch Hours")
-        st.bar_chart(subject_hours)
+        # _subject-wise total actual hours
+        _subject_hours = df.groupby('_subject_title')['actual_hours'].sum().nlargest(5)
+        st.subheader("📌 Top 5 _subjects by Watch Hours")
+        st.bar_chart(_subject_hours)
         
         # Top 50 users by actual hours
         top_users = df.groupby('user_id')['actual_hours'].sum().nlargest(50)
