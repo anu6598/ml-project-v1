@@ -4,7 +4,7 @@ import joblib
 from sklearn.preprocessing import StandardScaler
 
 # Load the trained model
-model = joblib.load("suspicious_users_model.pkl")
+model = joblib.load("suspicious_model.pkl")
 
 def load_and_preprocess(uploaded_file):
     df = pd.read_csv(uploaded_file)
