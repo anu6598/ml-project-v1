@@ -15,4 +15,4 @@ streamlit
 pandas
 numpy
 plotly
-
+arima
