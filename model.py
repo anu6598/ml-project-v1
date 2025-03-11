@@ -68,8 +68,25 @@ if page == "📊 Video Usage Trends":
     
     if uploaded_file is not None:
         df, user_features = load_and_preprocess(uploaded_file)
+        
         st.write("Data Preview:")
         st.dataframe(df.head())
+
+        # Filter relevant subjects
+        selected_subjects = ["ENT", "Surgery", "Community Medicine", "Anatomy"]
+        filtered_df = df[df["_subject_title"].isin(selected_subjects)]
+
+        # Count occurrences of each subject
+        subject_counts = filtered_df["_subject_title"].value_counts()
+
+        # Plot bar chart
+        st.subheader("📊 Video Counts by Subject")
+        fig, ax = plt.subplots()
+        ax.bar(subject_counts.index, subject_counts.values, color=['blue', 'red', 'green', 'orange'])
+        ax.set_xlabel("Subject Title")
+        ax.set_ylabel("Number of Videos Watched")
+        ax.set_title("Distribution of Video Watch Counts by Subject")
+        st.pyplot(fig)
 
 # **PAGE 2: Suspicious Users Detection**
 elif page == "🔍 Suspicious Users Detection":
