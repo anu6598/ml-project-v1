@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import base64
+import os
 
-def predict_suspicious_users(df, model_path='suspicious_model.pkl'):
-    df['event_date'] = pd.to_datetime(df['event_date'])
+def load_model(model_path='suspicious_model.pkl'):
+    if not os.path.exists(model_path):
+        st.error("Model file not found! Please train the model first.")
+        return None
+    return joblib.load(model_path)
+
+def preprocess_data(uploaded_file):
+    df = pd.read_csv(uploaded_file)
+    df['user_id'] = df['user_id'].astype(str).str.strip().str.lower()
     
-    if df.empty:
-        return pd.DataFrame(columns=['user_id', 'reason', 'event_date'])
-
     features = df.groupby('user_id').agg({
         'actual_hours': 'sum',
         '_pause': 'sum',
@@ -16,59 +20,54 @@ def predict_suspicious_users(df, model_path='suspicious_model.pkl'):
         'lesson_id': 'nunique',
         '_d_id': 'nunique'
     }).rename(columns={'lesson_id': 'unique_lessons', '_d_id': 'unique_devices'})
+    
+    return features
 
-    model = joblib.load(model_path)
+def predict_suspicious_users(features, model):
+    if model is None:
+        return None
+    
     features['is_predicted_suspicious'] = model.predict(features)
+    suspicious_users = features[features['is_predicted_suspicious'] == 1]
+    suspicious_users = suspicious_users.reset_index()
     
-    suspicious_users = features[features['is_predicted_suspicious'] == 1].reset_index()
+    if len(suspicious_users) > 50:
+        suspicious_users = suspicious_users.nlargest(50, 'actual_hours')
     
-    feature_importances = model.feature_importances_
-    feature_names = features.columns[:-1]
-    reason_map = {name: feature_importances[i] for i, name in enumerate(feature_names)}
-    top_reason = max(reason_map, key=reason_map.get)
-    suspicious_users['reason'] = f"High {top_reason} usage"
-    suspicious_users['event_date'] = df['event_date'].max().date()
-    
-    return suspicious_users[['user_id', 'reason', 'event_date']]
+    return suspicious_users[['user_id', 'actual_hours']]
 
 # Streamlit UI
-def main():
-    st.set_page_config(page_title="Suspicious User Detector", layout="wide")
-    
-    # Background Style
-    page_bg = """
+st.set_page_config(page_title="Suspicious User Detector", layout="wide")
+st.markdown(
+    """
     <style>
     body {
-        background: linear-gradient(135deg, #0033cc, #66ccff);
+        background: linear-gradient(to right, #1E3C72, #2A5298);
         color: white;
     }
     .stApp {
-        background: linear-gradient(135deg, #0033cc, #66ccff);
+        background: transparent;
+    }
+    .stTextInput, .stFileUploader, .stButton, .stDataFrame, .stTable {
+        color: white !important;
     }
     </style>
-    """
-    st.markdown(page_bg, unsafe_allow_html=True)
-    
-    st.title("📊 Suspicious User Detector")
-    st.write("Upload a CSV file to identify suspicious users based on video interactions.")
-    
-    uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
-    
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        suspicious_users = predict_suspicious_users(df)
-        
-        if not suspicious_users.empty:
-            st.success("Suspicious users identified!")
-            st.dataframe(suspicious_users)
-            
-            # Download link
-            csv = suspicious_users.to_csv(index=False).encode('utf-8')
-            b64 = base64.b64encode(csv).decode()
-            href = f'<a href="data:file/csv;base64,{b64}" download="suspicious_users.csv">Download CSV</a>'
-            st.markdown(href, unsafe_allow_html=True)
-        else:
-            st.warning("No suspicious users detected in this dataset.")
+    """,
+    unsafe_allow_html=True
+)
 
-if __name__ == "__main__":
-    main()
+st.title("🔍 Suspicious User Detector")
+st.write("Upload a CSV file to detect the top 50 suspicious users for that day.")
+
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    model = load_model()
+    features = preprocess_data(uploaded_file)
+    suspicious_users = predict_suspicious_users(features, model)
+    
+    if suspicious_users is not None and not suspicious_users.empty:
+        st.success(f"Top {len(suspicious_users)} suspicious users detected!")
+        st.dataframe(suspicious_users)
+    else:
+        st.warning("No suspicious users found for this file.")
