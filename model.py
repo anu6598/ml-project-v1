@@ -49,9 +49,17 @@ def load_and_preprocess(csv_file):
         '_pause': 'sum',
         '_seek': 'sum',
         'lesson_id': 'nunique',
-    }).rename(columns={'lesson_id': 'unique_lessons'})
+        '_d_id': 'nunique'  # Ensure 'unique_devices' is derived
+    }).rename(columns={'lesson_id': 'unique_lessons', '_d_id': 'unique_devices'})
+
+    # Ensure all expected columns exist
+    expected_features = ['actual_hours', '_pause', '_seek', 'unique_lessons', 'unique_devices']
+    for col in expected_features:
+        if col not in features.columns:
+            features[col] = 0  # Fill missing columns with 0
 
     return df, features
+
 
 # **PAGE 1: Video Usage Trends**
 if page == "📊 Video Usage Trends":
