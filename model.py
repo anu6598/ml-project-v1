@@ -65,16 +65,25 @@ elif page == "🔍 Suspicious Users Detection":
     if uploaded_file is not None:
         df, features = load_and_preprocess(uploaded_file)
 
-        # Define the features the model was trained on
-        trained_features = ['actual_hours', '_pause', '_seek', 'unique_lessons']  # Adjust if needed
+        # Ensure required features exist
+        trained_features = ['actual_hours', '_pause', '_seek', 'unique_lessons']
+        available_features = [col for col in trained_features if col in features.columns]
 
-        # Ensure all required features exist
-        missing_features = [col for col in trained_features if col not in features.columns]
-        if missing_features:
+        if len(available_features) < len(trained_features):
+            missing_features = set(trained_features) - set(available_features)
             st.error(f"Missing required features: {missing_features}")
         else:
-            # Predict suspicious users
-            features['is_suspicious'] = model.predict(features[trained_features])
+            # Ensure the order of features matches the training set
+            X_input = features[trained_features].copy()
+            
+            # Handle any NaN values if they exist
+            X_input.fillna(0, inplace=True)
+            
+            # Convert data to numerical format
+            X_input = X_input.astype(float)
+
+            # Make predictions
+            features['is_predicted_suspicious'] = model.predict(X_input)
 
             # Extract flagged users & filter top 50
             suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours').reset_index()
