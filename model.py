@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Load trained model
 MODEL_PATH = "suspicious_model.pkl"
@@ -10,6 +8,31 @@ model = joblib.load(MODEL_PATH)
 
 # Streamlit page configuration
 st.set_page_config(page_title="User Analysis Dashboard", layout="wide")
+
+# Custom CSS for styling
+st.markdown(
+    """
+    <style>
+    body {
+        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+        color: white;
+    }
+    .css-1aumxhk {
+        color: white !important;
+    }
+    .stTextInput, .stFileUploader, .stSelectbox {
+        border-radius: 10px;
+        padding: 10px;
+    }
+    .stButton>button {
+        border-radius: 10px;
+        background-color: #1f4e78;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
@@ -45,25 +68,8 @@ if page == "📊 Video Usage Trends":
     
     if uploaded_file is not None:
         df, user_features = load_and_preprocess(uploaded_file)
-        
         st.write("Data Preview:")
         st.dataframe(df.head())
-        
-        # Plot total watch hours distribution
-        st.subheader("📉 Distribution of Watch Hours")
-        fig, ax = plt.subplots()
-        sns.histplot(user_features['actual_hours'], bins=20, kde=True, ax=ax)
-        ax.set_xlabel("Total Watch Hours")
-        ax.set_ylabel("Number of Users")
-        st.pyplot(fig)
-        
-        # Plot relationship between watch hours and unique lessons
-        st.subheader("📊 Watch Hours vs. Unique Lessons")
-        fig, ax = plt.subplots()
-        sns.scatterplot(data=user_features, x='unique_lessons', y='actual_hours', alpha=0.7, ax=ax)
-        ax.set_xlabel("Unique Lessons")
-        ax.set_ylabel("Total Watch Hours")
-        st.pyplot(fig)
 
 # **PAGE 2: Suspicious Users Detection**
 elif page == "🔍 Suspicious Users Detection":
