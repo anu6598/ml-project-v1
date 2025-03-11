@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import plotly.graph_objects as go
-import plotly.express as px
 
 # Load trained model
 MODEL_PATH = "suspicious_model.pkl"
@@ -11,7 +9,7 @@ model = joblib.load(MODEL_PATH)
 # Streamlit page configuration
 st.set_page_config(page_title="User Analysis Dashboard", layout="wide")
 
-# Custom CSS for blue ombre background and white text
+# Custom CSS for styling
 st.markdown(
     """
     <style>
@@ -22,7 +20,7 @@ st.markdown(
     .css-1aumxhk {
         color: white !important;
     }
-    .stTextInput, .stFileUploader {
+    .stTextInput, .stFileUploader, .stSelectbox {
         border-radius: 10px;
         padding: 10px;
     }
@@ -38,7 +36,7 @@ st.markdown(
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Video Usage Trends", "🔍 Suspicious Users Detection"])
+page = st.sidebar.radio("Go to", ["📊 Video Usage Trends", "🔍 Suspicious Users Detection", "🔎 Check a User"])
 
 def load_and_preprocess(csv_file):
     """ Load and preprocess data for analysis """
@@ -62,43 +60,8 @@ if page == "📊 Video Usage Trends":
     
     if uploaded_file is not None:
         df, user_features = load_and_preprocess(uploaded_file)
-
-        st.subheader("1️⃣ How users are navigating videos (Sankey Chart)")
-        user_flow = df.groupby(['user_id', 'lesson_id']).size().reset_index(name='count')
-
-        # Create node labels
-        unique_users = user_flow['user_id'].unique().tolist()
-        unique_lessons = user_flow['lesson_id'].unique().tolist()
-        all_labels = unique_users + unique_lessons
-
-        # Map users & lessons to indices
-        node_indices = {label: i for i, label in enumerate(all_labels)}
-        source = user_flow['user_id'].map(node_indices)
-        target = user_flow['lesson_id'].map(node_indices)
-        value = user_flow['count']
-
-        fig_sankey = go.Figure(go.Sankey(
-            node=dict(
-                pad=15, thickness=20, line=dict(color="white", width=0.5),
-                label=all_labels, color="blue"
-            ),
-            link=dict(
-                source=source, target=target, value=value
-            )
-        ))
-        fig_sankey.update_layout(title_text="User Video Flow", font=dict(color="white"))
-        st.plotly_chart(fig_sankey)
-
-        st.subheader("2️⃣ Power Users (High Watch Hours & Lessons)")
-        top_users = user_features.nlargest(10, 'actual_hours')
-        fig_bar = px.bar(
-            top_users, x=top_users.index, y=['actual_hours', 'unique_lessons'],
-            title="Top Users by Actual Hours & Unique Lessons",
-            labels={"value": "Count", "variable": "Metric"},
-            barmode="group", color_discrete_sequence=["blue", "cyan"]
-        )
-        fig_bar.update_layout(font=dict(color="white"), xaxis_title="User ID")
-        st.plotly_chart(fig_bar)
+        st.write("Data Preview:")
+        st.dataframe(df.head())
 
 # **PAGE 2: Suspicious Users Detection**
 elif page == "🔍 Suspicious Users Detection":
@@ -122,3 +85,46 @@ elif page == "🔍 Suspicious Users Detection":
         # Save results
         suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
         st.success("✅ Predictions saved to predicted_suspicious_users.csv")
+
+# **PAGE 3: Check a User**
+elif page == "🔎 Check a User":
+    st.title("🔎 Check if a User is Suspicious")
+    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
+    
+    if uploaded_file is not None:
+        df, features = load_and_preprocess(uploaded_file)
+        
+        # User ID input
+        user_id = st.text_input("Enter a User ID to Check", "").strip().lower()
+        
+        if user_id:
+            if user_id in features.index:
+                user_data = features.loc[user_id]
+                prediction = model.predict([user_data])[0]
+                
+                # Display user data
+                st.subheader("📊 User Data")
+                st.dataframe(pd.DataFrame(user_data).T)
+
+                # Display Result
+                if prediction == 1:
+                    st.error(f"🚨 User {user_id} is **SUSPICIOUS** 🚨")
+                else:
+                    st.success(f"✅ User {user_id} is **NOT Suspicious** ✅")
+
+                # Reasoning
+                st.subheader("🧐 Why is this user suspicious?")
+                if prediction == 1:
+                    reasons = []
+                    if user_data['actual_hours'] > 10:
+                        reasons.append("Unusually high watch hours.")
+                    if user_data['_pause'] == 0 and user_data['_seek'] == 0:
+                        reasons.append("No pauses or seeks detected.")
+                    if user_data['unique_lessons'] < 2:
+                        reasons.append("Very few unique lessons watched.")
+                    
+                    for reason in reasons:
+                        st.write(f"🔸 {reason}")
+
+            else:
+                st.warning("⚠️ User ID not found in the uploaded data.")
