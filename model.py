@@ -63,13 +63,21 @@ def load_and_preprocess(csv_file):
 
 # **PAGE 1: Video Usage Trends**
 if page == "📊 Video Usage Trends":
-    st.title("📊 Video Usage Analysis")
+    st.title("📊 Video Usage Trends")
     uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
     
     if uploaded_file is not None:
-        df, user_features = load_and_preprocess(uploaded_file)
-        st.write("Data Preview:")
-        st.dataframe(df.head())
+        df, _ = load_and_preprocess(uploaded_file)
+        
+        # Subject-wise total actual hours
+        subject_hours = df.groupby('subject_title')['actual_hours'].sum().nlargest(5)
+        st.subheader("📌 Top 5 Subjects by Watch Hours")
+        st.bar_chart(subject_hours)
+        
+        # Top 50 users by actual hours
+        top_users = df.groupby('user_id')['actual_hours'].sum().nlargest(50)
+        st.subheader("🏆 Top 50 Users by Watch Hours")
+        st.dataframe(top_users)
 
 
 # **PAGE 2: Suspicious Users Detection**
