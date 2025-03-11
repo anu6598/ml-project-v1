@@ -2,41 +2,40 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-def load_data(file):
-    df = pd.read_csv(file)
-    return df
+# Sidebar Navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Video Usage Trends", "Suspicious Users", "User Analysis"])
 
-def display_top_subjects(df):
-    # Filter for top subjects
-    top_subjects = ['OBG', 'Anatomy', 'Surgery', 'ENT', 'Medicine']
-    df_filtered = df[df['subject_title'].isin(top_subjects)]
-    
-    # Aggregate hours per subject
-    subject_hours = df_filtered.groupby('subject_title')['actual_hours'].sum().reset_index()
-    
-    # Plot
-    fig = px.bar(subject_hours, x='subject_title', y='actual_hours', title='Actual Hours Consumed per Subject',
-                 labels={'actual_hours': 'Total Hours'}, color='subject_title')
-    st.plotly_chart(fig)
+# File Upload
+uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
 
-def display_top_users(df):
-    # Get top 50 users by actual hours
-    top_users = df.groupby('user_id')['actual_hours'].sum().reset_index()
-    top_users = top_users.sort_values(by='actual_hours', ascending=False).head(50)
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
     
-    st.write("### Top 50 Users by Actual Hours")
-    st.dataframe(top_users)
-
-def main():
-    st.set_page_config(page_title='Video Usage Insights', layout='wide')
-    st.title('Video Usage Insights - Page 1')
-    
-    uploaded_file = st.file_uploader("Upload CSV File", type=['csv'])
-    if uploaded_file:
-        df = load_data(uploaded_file)
+    if page == "Video Usage Trends":
+        st.title("Video Usage Trends")
         
-        display_top_subjects(df)
-        display_top_users(df)
-
-if __name__ == "__main__":
-    main()
+        # Top _subjects Consumption
+        top__subjects = ['Anatomy', 'Surgery', 'ENT', 'Medicine', 'Community Medicine']
+        _subject_hours = df[df['_subject_title'].isin(top__subjects)].groupby('_subject_title')['actual_hours'].sum().reset_index()
+        fig = px.bar(_subject_hours, x='_subject_title', y='actual_hours', title="Hours Watched per _subject", color='_subject_title')
+        st.plotly_chart(fig)
+        
+        # Top 50 Users by Watch Time
+        top_users = df.groupby('user_id')['actual_hours'].sum().reset_index().sort_values(by='actual_hours', ascending=False).head(50)
+        st.write("### Top 50 Users by Actual Hours")
+        st.dataframe(top_users)
+    
+    elif page == "Suspicious Users":
+        st.title("Suspicious Users Detection")
+        # Suspicious user logic (Assuming the model is already integrated)
+        st.write("Suspicious users will be displayed here.")
+    
+    elif page == "User Analysis":
+        st.title("User Analysis")
+        user_id = st.text_input("Enter User ID:")
+        if user_id:
+            user_data = df[df['user_id'] == user_id]
+            st.write("### User Data")
+            st.dataframe(user_data)
+            # Model prediction logic (if needed)
