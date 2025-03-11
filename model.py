@@ -62,29 +62,36 @@ def load_and_preprocess(csv_file):
 
 
 # **PAGE 1: Video Usage Trends**
+import matplotlib.pyplot as plt
+
 if page == "📊 Video Usage Trends":
     st.title("📊 Video Usage Analysis")
     uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
     
     if uploaded_file is not None:
         df, user_features = load_and_preprocess(uploaded_file)
-        
-        # Filter for specific subjects
-        selected_subjects = ["ENT", "Surgery", "Community Medicine", "Anatomy"]
-        filtered_df = df[df["_subject_title"].isin(selected_subjects)]
-        
-        # Count occurrences
-        subject_counts = filtered_df["_subject_title"].value_counts()
-        
-        # Plot bar chart
-        fig, ax = plt.subplots()
-        subject_counts.plot(kind="bar", ax=ax, color=["blue", "red", "green", "purple"])
-        ax.set_title("Video Count per Subject")
-        ax.set_xlabel("Subjects")
-        ax.set_ylabel("Number of Videos")
-        
-        # Show plot in Streamlit
-        st.pyplot(fig)
+
+        # Display the first few rows
+        st.write("Data Preview:")
+        st.dataframe(df.head())
+
+        # Ensure the column exists
+        if "_subject_title" not in df.columns:
+            st.error("⚠️ Column '_subject_title' not found in uploaded CSV!")
+        else:
+            # Filter for specific subjects
+            selected_subjects = ["ENT", "Surgery", "Community Medicine", "Anatomy"]
+            filtered_df = df[df["_subject_title"].isin(selected_subjects)]
+            
+            if filtered_df.empty:
+                st.warning("⚠️ No data found for the selected subjects.")
+            else:
+                # Count occurrences
+                subject_counts = filtered_df["_subject_title"].value_counts()
+
+                # Plot using Streamlit's built-in function
+                st.bar_chart(subject_counts)
+
 
 
 # **PAGE 2: Suspicious Users Detection**
