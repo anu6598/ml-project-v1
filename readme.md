@@ -16,3 +16,4 @@ pandas
 numpy
 plotly
 arima
+statsmodels.tsa.arima.model
