@@ -74,7 +74,7 @@ elif page == "🔍 Suspicious Users Detection":
             st.error(f"Missing required features: {missing_features}")
         else:
             # Predict suspicious users
-            features['is_predicted_suspicious'] = model.predict(features[trained_features])
+            features['is_suspicious'] = model.predict(features[trained_features])
 
             # Extract flagged users & filter top 50
             suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours').reset_index()
