@@ -8,13 +8,29 @@ model = joblib.load("suspicious_model.pkl")
 
 def load_and_preprocess(uploaded_file):
     df = pd.read_csv(uploaded_file)
-    df.fillna(0, inplace=True)
+    
+    # Ensure all necessary columns exist
+    required_columns = ['user_id', 'actual_hours', '_pause', '_seek', 'lesson_id']
+    missing_cols = [col for col in required_columns if col not in df.columns]
+    if missing_cols:
+        st.error(f"Missing columns in uploaded file: {missing_cols}")
+        return None, None
+    
+    # Convert user_id to string and clean
     df['user_id'] = df['user_id'].astype(str).str.strip().str.lower()
     
-    # Select necessary features
-    features = df[['actual_hours', '_pause', '_seek', 'unique_lessons']]
-    features = StandardScaler().fit_transform(features)
-    features = pd.DataFrame(features, columns=['actual_hours', '_pause', '_seek', 'unique_lessons'], index=df['user_id'])
+    # Calculate unique lessons per user
+    unique_lessons = df.groupby('user_id')['lesson_id'].nunique().rename('unique_lessons')
+    
+    # Aggregate required features
+    features = df.groupby('user_id').agg({
+        'actual_hours': 'sum',
+        '_pause': 'sum',
+        '_seek': 'sum'
+    })
+    
+    # Merge with unique lesson count
+    features = features.join(unique_lessons, how='left').fillna(0)
     
     return df, features
 
