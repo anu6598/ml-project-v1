@@ -75,7 +75,7 @@ if page == "📊 Video Usage Trends":
         st.bar_chart(_subject_hours)
         
         # Top 50 users by actual hours
-        top_users = df.groupby('user_id')['actual_hours'].sum().nlargest(50)
+        top_users = df.groupby('user_id')['actual_hours'].sum().div(60).nlargest(50)
         st.subheader("🏆 Top 50 Users by Watch Hours")
         st.dataframe(top_users)
 
