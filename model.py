@@ -2,82 +2,76 @@ import streamlit as st
 import pandas as pd
 import joblib
 import plotly.express as px
+from sklearn.ensemble import RandomForestClassifier
 
-# Load trained model
-MODEL_PATH = "suspicious_model.pkl"
-model = joblib.load(MODEL_PATH)
+def load_model():
+    return joblib.load("suspicious_model.pkl")
 
-def load_and_preprocess(csv_file):
-    df = pd.read_csv(csv_file)
+def preprocess_data(uploaded_file):
+    df = pd.read_csv(uploaded_file)
     df['user_id'] = df['user_id'].astype(str).str.strip().str.lower()
     df['event_date'] = pd.to_datetime(df['event_date'])
-
     features = df.groupby('user_id').agg({
         'actual_hours': 'sum',
         '_pause': 'sum',
         '_seek': 'sum',
-        'lesson_id': 'nunique',
-        '_d_id': 'nunique',
-        '_region': 'first'  # Assuming region is a user-level attribute
-    }).rename(columns={'lesson_id': 'unique_lessons', '_d_id': 'unique_devices'})
-    
-    return df, features
+        'lesson_id': 'nunique'
+    }).rename(columns={'lesson_id': 'unique_lessons'})
+    return features, df
 
-def get_suspicious_users(features):
+def predict_suspicious_users(features, model):
     features['is_predicted_suspicious'] = model.predict(features)
     suspicious_users = features[features['is_predicted_suspicious'] == 1]
-    suspicious_users = suspicious_users.nlargest(50, 'actual_hours')  # Top 50 users
-    return suspicious_users.reset_index()[['user_id', 'actual_hours', 'unique_lessons']]
+    return suspicious_users.sort_values(by='actual_hours', ascending=False).head(50)
 
-def show_trends(df):
-    st.subheader("User Video Usage Trends")
+def show_usage_trends(df):
+    st.subheader("📊 Video Usage Trends")
     
-    # User journey visualization
-    user_journey = df.groupby(['user_id', 'event_date']).size().reset_index(name='video_count')
-    fig1 = px.line(user_journey, x='event_date', y='video_count', color='user_id', title="User Video Consumption Over Time")
-    st.plotly_chart(fig1)
+    # User Journey Flowchart
+    st.write("### User Navigation Flow")
+    user_journey = df.groupby(['user_id', 'lesson_id']).size().reset_index(name='count')
+    fig_flow = px.sankey(user_journey, source='user_id', target='lesson_id', value='count', title='User Video Journey')
+    st.plotly_chart(fig_flow)
     
-    # Power Users
+    # Power Users Chart
+    st.write("### Power Users")
     power_users = df.groupby('user_id').agg({'actual_hours': 'sum', 'lesson_id': 'nunique'}).reset_index()
-    power_users = power_users.nlargest(10, 'actual_hours')
-    st.subheader("Top Power Users")
-    st.dataframe(power_users)
+    fig_power = px.bar(power_users, x='user_id', y='actual_hours', color='lesson_id', title='Power Users')
+    st.plotly_chart(fig_power)
     
-    # Regional Distribution
-    region_dist = df['_region'].value_counts().reset_index()
-    region_dist.columns = ['Region', 'User Count']
-    fig2 = px.bar(region_dist, x='Region', y='User Count', title="User Distribution by Region")
-    st.plotly_chart(fig2)
+    # Time Series Trend
+    st.write("### Video Consumption Over Time")
+    df['hour'] = df['event_date'].dt.hour
+    hourly_trend = df.groupby('hour')['actual_hours'].sum().reset_index()
+    fig_time = px.line(hourly_trend, x='hour', y='actual_hours', title='Video Usage Per Hour')
+    st.plotly_chart(fig_time)
 
-def main():
-    st.set_page_config(page_title="Video Analytics", layout="wide")
-    st.markdown("""
-        <style>
-            body {
-                background: linear-gradient(to right, #1e3c72, #2a5298);
-                color: white;
-            }
-            .stApp {
-                background-color: transparent;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    st.title("📊 Video Analytics Dashboard")
-    
-    menu = ["Usage Trends", "Suspicious Users"]
-    choice = st.sidebar.selectbox("Select Page", menu)
-    
-    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-    if uploaded_file is not None:
-        df, features = load_and_preprocess(uploaded_file)
-        
-        if choice == "Usage Trends":
-            show_trends(df)
-        elif choice == "Suspicious Users":
-            st.subheader("Top 50 Suspicious Users")
-            suspicious_users = get_suspicious_users(features)
-            st.dataframe(suspicious_users)
+# Streamlit App UI
+st.set_page_config(page_title="Suspicious User Detector", layout="wide")
+st.markdown("""
+    <style>
+    body {
+        background: linear-gradient(to right, #005aa7, #fffde4);
+        color: white;
+    }
+    .stApp {
+        background-color: transparent;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main()
+st.title("🔍 Suspicious User Detector & Video Trends")
+menu = st.sidebar.radio("Navigation", ["Usage Trends", "Suspicious Users"])
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+
+if uploaded_file:
+    features, df = preprocess_data(uploaded_file)
+    model = load_model()
+    
+    if menu == "Usage Trends":
+        show_usage_trends(df)
+    else:
+        st.subheader("🚨 Top 50 Suspicious Users")
+        suspicious_users = predict_suspicious_users(features, model)
+        st.dataframe(suspicious_users)
+        st.download_button("Download CSV", suspicious_users.to_csv(index=False), file_name="suspicious_users.csv", mime="text/csv")
