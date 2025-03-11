@@ -64,21 +64,28 @@ elif page == "🔍 Suspicious Users Detection":
     
     if uploaded_file is not None:
         df, features = load_and_preprocess(uploaded_file)
-        
-        # Predict suspicious users
-        features['is_predicted_suspicious'] = model.predict(features)
 
-        # Extract flagged users & filter top 50
-        suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours')
-        suspicious_users = suspicious_users.reset_index()
-        
-        # Display Results
-        st.subheader("🚨 Top 50 Suspicious Users")
-        st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
-        
-        # Save results
-        suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
-        st.success("✅ Predictions saved to predicted_suspicious_users.csv")
+        # Define the features the model was trained on
+        trained_features = ['actual_hours', '_pause', '_seek', 'unique_lessons']  # Adjust if needed
+
+        # Ensure all required features exist
+        missing_features = [col for col in trained_features if col not in features.columns]
+        if missing_features:
+            st.error(f"Missing required features: {missing_features}")
+        else:
+            # Predict suspicious users
+            features['is_predicted_suspicious'] = model.predict(features[trained_features])
+
+            # Extract flagged users & filter top 50
+            suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours').reset_index()
+
+            # Display Results
+            st.subheader("🚨 Top 50 Suspicious Users")
+            st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
+
+            # Save results
+            suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
+            st.success("✅ Predictions saved to predicted_suspicious_users.csv")
 
 # **PAGE 3: Check a User**
 elif page == "🔎 Check a User":
