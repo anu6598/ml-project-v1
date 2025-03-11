@@ -1,138 +1,96 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import joblib
+from statsmodels.tsa.arima.model import ARIMA
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Load trained model
-MODEL_PATH = "suspicious_model.pkl"
-model = joblib.load(MODEL_PATH)
+model_path = 'suspicious_model.pkl'
+model = joblib.load(model_path)
 
-# Streamlit page configuration
-st.set_page_config(page_title="User Analysis Dashboard", layout="wide")
-
-# Custom CSS for styling
-st.markdown(
-    """
-    <style>
-    body {
-        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
-        color: white;
-    }
-    .css-1aumxhk {
-        color: white !important;
-    }
-    .stTextInput, .stFileUploader, .stSelectbox {
-        border-radius: 10px;
-        padding: 10px;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        background-color: #1f4e78;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# Streamlit UI
+st.set_page_config(page_title='User Analysis', layout='wide')
+st.title("📊 User Analysis Dashboard")
 
 # Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Video Usage Trends", "🔍 Suspicious Users Detection", "🔎 Check a User"])
+page = st.sidebar.radio("Select Page", ["Upload Data", "Suspicious Users", "User Analysis", "Forecasting"])
 
-def load_and_preprocess(csv_file):
-    """ Load and preprocess data for analysis """
-    df = pd.read_csv(csv_file)
-    df['user_id'] = df['user_id'].astype(str).str.strip().str.lower()
-    
-    # Aggregate user interactions
-    features = df.groupby('user_id').agg({
-        'actual_hours': 'sum',
-        '_pause': 'sum',
-        '_seek': 'sum',
-        'lesson_id': 'nunique',
-        '_d_id': 'nunique'  # Ensure 'unique_devices' is derived
-    }).rename(columns={'lesson_id': 'unique_lessons', '_d_id': 'unique_devices'})
-
-    # Ensure all expected columns exist
-    expected_features = ['actual_hours', '_pause', '_seek', 'unique_lessons', 'unique_devices']
-    for col in expected_features:
-        if col not in features.columns:
-            features[col] = 0  # Fill missing columns with 0
-
-    return df, features
-
-
-# **PAGE 1: Video Usage Trends**
-if page == "📊 Video Usage Trends":
-    st.title("📊 Video Usage Analysis")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
-    
-    if uploaded_file is not None:
-        df, user_features = load_and_preprocess(uploaded_file)
-        st.write("Data Preview:")
+if page == "Upload Data":
+    st.header("📂 Upload CSV File")
+    uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write("Preview of Data:")
         st.dataframe(df.head())
+        st.session_state['uploaded_data'] = df
 
-# **PAGE 2: Suspicious Users Detection**
-elif page == "🔍 Suspicious Users Detection":
-    st.title("🔍 Detect Suspicious Users")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
-    
-    if uploaded_file is not None:
-        df, features = load_and_preprocess(uploaded_file)
+elif page == "Suspicious Users":
+    st.header("🚨 Suspicious Users Detection")
+    if 'uploaded_data' in st.session_state:
+        df = st.session_state['uploaded_data']
+        features = df.groupby('user_id').agg({
+            'actual_hours': 'sum',
+            '_pause': 'sum',
+            '_seek': 'sum',
+            'lesson_id': 'nunique'
+        }).rename(columns={'lesson_id': 'unique_lessons'})
         
-        # Predict suspicious users
         features['is_predicted_suspicious'] = model.predict(features)
+        suspicious_users = features[features['is_predicted_suspicious'] == 1].reset_index()
+        suspicious_users = suspicious_users.sort_values(by='actual_hours', ascending=False).head(50)
+        st.write("Top 50 Suspicious Users:")
+        st.dataframe(suspicious_users[['user_id', 'actual_hours']])
+    else:
+        st.warning("Please upload a CSV file first.")
 
-        # Extract flagged users & filter top 50
-        suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours')
-        suspicious_users = suspicious_users.reset_index()
-        
-        # Display Results
-        st.subheader("🚨 Top 50 Suspicious Users")
-        st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
-        
-        # Save results
-        suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
-        st.success("✅ Predictions saved to predicted_suspicious_users.csv")
+elif page == "User Analysis":
+    st.header("🔍 User Analysis")
+    user_id = st.text_input("Enter User ID:")
+    if user_id and 'uploaded_data' in st.session_state:
+        df = st.session_state['uploaded_data']
+        user_data = df[df['user_id'] == user_id]
+        if not user_data.empty:
+            user_features = user_data.groupby('user_id').agg({
+                'actual_hours': 'sum',
+                '_pause': 'sum',
+                '_seek': 'sum',
+                'lesson_id': 'nunique'
+            }).rename(columns={'lesson_id': 'unique_lessons'})
+            
+            prediction = model.predict(user_features)
+            result = "Suspicious" if prediction[0] == 1 else "Not Suspicious"
+            reason = "High actual hours / No pause & seek activity" if prediction[0] == 1 else "Normal User"
+            
+            st.write(f"### User ID: {user_id}")
+            st.write(f"#### Result: {result}")
+            st.write(f"#### Reason: {reason}")
+            st.write("User Data:")
+            st.dataframe(user_data)
+        else:
+            st.warning("User ID not found.")
 
-# **PAGE 3: Check a User**
-elif page == "🔎 Check a User":
-    st.title("🔎 Check if a User is Suspicious")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
-    
-    if uploaded_file is not None:
-        df, features = load_and_preprocess(uploaded_file)
-        
-        # User ID input
-        user_id = st.text_input("Enter a User ID to Check", "").strip().lower()
-        
-        if user_id:
-            if user_id in features.index:
-                user_data = features.loc[user_id]
-                prediction = model.predict([user_data])[0]
-                
-                # Display user data
-                st.subheader("📊 User Data")
-                st.dataframe(pd.DataFrame(user_data).T)
-
-                # Display Result
-                if prediction == 1:
-                    st.error(f"🚨 User {user_id} is **SUSPICIOUS** 🚨")
-                else:
-                    st.success(f"✅ User {user_id} is **NOT Suspicious** ✅")
-
-                # Reasoning
-                st.subheader("🧐 Why is this user suspicious?")
-                if prediction == 1:
-                    reasons = []
-                    if user_data['actual_hours'] > 10:
-                        reasons.append("Unusually high watch hours.")
-                    if user_data['_pause'] == 0 and user_data['_seek'] == 0:
-                        reasons.append("No pauses or seeks detected.")
-                    if user_data['unique_lessons'] < 2:
-                        reasons.append("Very few unique lessons watched.")
-                    
-                    for reason in reasons:
-                        st.write(f"🔸 {reason}")
-
-            else:
-                st.warning("⚠️ User ID not found in the uploaded data.")
+elif page == "Forecasting":
+    st.header("📈 Forecasting Actual Hours")
+    if 'uploaded_data' in st.session_state:
+        df = st.session_state['uploaded_data']
+        if 'timestamp' in df.columns and 'actual_hours' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.groupby('timestamp')['actual_hours'].sum().reset_index()
+            
+            fig = px.line(df, x='timestamp', y='actual_hours', title='Actual Hours Over Time')
+            st.plotly_chart(fig)
+            
+            # ARIMA Forecasting
+            df.set_index('timestamp', inplace=True)
+            model = ARIMA(df['actual_hours'], order=(5,1,0))
+            arima_model = model.fit()
+            forecast = arima_model.forecast(steps=1)
+            
+            st.subheader("📊 Forecast for Next Day")
+            st.write(f"Predicted Actual Hours: {forecast.values[0]:.2f}")
+        else:
+            st.warning("Timestamp or Actual Hours column missing in uploaded data.")
+    else:
+        st.warning("Please upload a CSV file first.")
