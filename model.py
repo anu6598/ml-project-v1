@@ -64,37 +64,21 @@ elif page == "🔍 Suspicious Users Detection":
     
     if uploaded_file is not None:
         df, features = load_and_preprocess(uploaded_file)
+        
+        # Predict suspicious users
+        features['is_predicted_suspicious'] = model.predict(features)
 
-        # Ensure required features exist
-        trained_features = ['actual_hours', '_pause', '_seek', 'unique_lessons']
-        available_features = [col for col in trained_features if col in features.columns]
-
-        if len(available_features) < len(trained_features):
-            missing_features = set(trained_features) - set(available_features)
-            st.error(f"Missing required features: {missing_features}")
-        else:
-            # Ensure the order of features matches the training set
-            X_input = features[trained_features].copy()
-            
-            # Handle any NaN values if they exist
-            X_input.fillna(0, inplace=True)
-            
-            # Convert data to numerical format
-            X_input = X_input.astype(float)
-
-            # Make predictions
-            features['is_predicted_suspicious'] = model.predict(X_input)
-
-            # Extract flagged users & filter top 50
-            suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours').reset_index()
-
-            # Display Results
-            st.subheader("🚨 Top 50 Suspicious Users")
-            st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
-
-            # Save results
-            suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
-            st.success("✅ Predictions saved to predicted_suspicious_users.csv")
+        # Extract flagged users & filter top 50
+        suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours')
+        suspicious_users = suspicious_users.reset_index()
+        
+        # Display Results
+        st.subheader("🚨 Top 50 Suspicious Users")
+        st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
+        
+        # Save results
+        suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
+        st.success("✅ Predictions saved to predicted_suspicious_users.csv")
 
 # **PAGE 3: Check a User**
 elif page == "🔎 Check a User":
