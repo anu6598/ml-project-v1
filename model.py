@@ -13,7 +13,7 @@ def preprocess_data(df):
     user_activity = df.groupby('user_id').agg(
         rate_limit_violations=('limit_name', 'count'),
         unique_devices=('device_id', 'nunique'),
-        unique_ips=('ip_address', 'nunique'),
+        unique_ips=('ip', 'nunique'),
         first_access=('created_on', 'min'),
         last_access=('last_updated', 'max')
     ).reset_index()
