@@ -1,147 +1,44 @@
 import streamlit as st
 import pandas as pd
-import joblib
+import numpy as np
+from sklearn.ensemble import IsolationForest
 
-# Load trained model
-MODEL_PATH = "suspicious_model.pkl"
-model = joblib.load(MODEL_PATH)
+def load_data(uploaded_file):
+    df = pd.read_csv(uploaded_file)
+    df['created_on'] = pd.to_datetime(df['created_on'], errors='coerce')
+    df['last_updated'] = pd.to_datetime(df['last_updated'], errors='coerce')
+    return df
 
-# Streamlit page configuration
-st.set_page_config(page_title="User Analysis Dashboard", layout="wide")
+def preprocess_data(df):
+    user_activity = df.groupby('user_id').agg(
+        rate_limit_violations=('limit_name', 'count'),
+        unique_devices=('device_id', 'nunique'),
+        unique_ips=('ip_address', 'nunique'),
+        first_access=('created_on', 'min'),
+        last_access=('last_updated', 'max')
+    ).reset_index()
+    user_activity['active_days'] = (user_activity['last_access'] - user_activity['first_access']).dt.days + 1
+    return user_activity
 
-# Custom CSS for styling
-st.markdown(
-    """
-    <style>
-    body {
-        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
-        color: white;
-    }
-    .css-1aumxhk {
-        color: white !important;
-    }
-    .stTextInput, .stFileUploader, .stSelectbox {
-        border-radius: 10px;
-        padding: 10px;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        background-color: #1f4e78;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+def detect_anomalies(df):
+    model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+    df['anomaly_score'] = model.fit_predict(df[['rate_limit_violations', 'unique_devices', 'unique_ips', 'active_days']])
+    suspicious_users = df[df['anomaly_score'] == -1]
+    return suspicious_users
 
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["📊 Video Usage Trends", "🔍 Suspicious Users Detection", "🔎 Check a User"])
+st.title("Piracy User Detection System")
 
-def load_and_preprocess(csv_file):
-    """ Load and preprocess data for analysis """
-    df = pd.read_csv(csv_file)
-    df['user_id'] = df['user_id'].astype(str).str.strip().str.lower()
+uploaded_file = st.file_uploader("Upload Video Rate Limit Log (CSV)", type=['csv'])
+
+if uploaded_file:
+    df = load_data(uploaded_file)
+    st.write("### Raw Data Sample")
+    st.write(df.head())
     
-    # Aggregate user interactions
-    features = df.groupby('user_id').agg({
-        'actual_hours': 'sum',
-        '_pause': 'sum',
-        '_seek': 'sum',
-        'lesson_id': 'nunique',
-        '_d_id': 'nunique'  # Ensure 'unique_devices' is derived
-    }).rename(columns={'lesson_id': 'unique_lessons', '_d_id': 'unique_devices'})
-
-    # Ensure all expected columns exist
-    expected_features = ['actual_hours', '_pause', '_seek', 'unique_lessons', 'unique_devices']
-    for col in expected_features:
-        if col not in features.columns:
-            features[col] = 0  # Fill missing columns with 0
-
-    return df, features
-
-
-# **PAGE 1: Video Usage Trends**
-if page == "📊 Video Usage Trends":
-    st.title("📊 Video Usage Trends")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
+    user_data = preprocess_data(df)
+    suspicious_users = detect_anomalies(user_data)
     
-    if uploaded_file is not None:
-        df, _ = load_and_preprocess(uploaded_file)
-        
-        # _subject-wise total actual hours
-        _subject_hours = df.groupby('_subject_title')['actual_hours'].sum().nlargest(5)
-        st.subheader("📌 Top 5 _subjects by Watch Hours")
-        st.bar_chart(_subject_hours)
-        
-        # Top 50 users by actual hours
-        top_users = df.groupby('user_id')['actual_hours'].sum().div(60).nlargest(50)
-        st.subheader("🏆 Top 50 Users by Watch Hours")
-        st.dataframe(top_users)
-
-
-# **PAGE 2: Suspicious Users Detection**
-elif page == "🔍 Suspicious Users Detection":
-    st.title("🔍 Detect Suspicious Users")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
+    st.write("### Suspicious Users Detected")
+    st.write(suspicious_users[['user_id', 'rate_limit_violations', 'unique_devices', 'unique_ips', 'active_days']])
     
-    if uploaded_file is not None:
-        df, features = load_and_preprocess(uploaded_file)
-        
-        # Predict suspicious users
-        features['is_predicted_suspicious'] = model.predict(features)
-
-        # Extract flagged users & filter top 50
-        suspicious_users = features[features['is_predicted_suspicious'] == 1].nlargest(50, 'actual_hours')
-        suspicious_users = suspicious_users.reset_index()
-        
-        # Display Results
-        st.subheader("🚨 Top 50 Suspicious Users")
-        st.dataframe(suspicious_users[['user_id', 'actual_hours', 'unique_lessons']])
-        
-        # Save results
-        suspicious_users.to_csv("predicted_suspicious_users.csv", index=False)
-        st.success("✅ Predictions saved to predicted_suspicious_users.csv")
-
-# **PAGE 3: Check a User**
-elif page == "🔎 Check a User":
-    st.title("🔎 Check if a User is Suspicious")
-    uploaded_file = st.file_uploader("Upload a CSV file", type=['csv'])
-    
-    if uploaded_file is not None:
-        df, features = load_and_preprocess(uploaded_file)
-        
-        # User ID input
-        user_id = st.text_input("Enter a User ID to Check", "").strip().lower()
-        
-        if user_id:
-            if user_id in features.index:
-                user_data = features.loc[user_id]
-                prediction = model.predict([user_data])[0]
-                
-                # Display user data
-                st.subheader("📊 User Data")
-                st.dataframe(pd.DataFrame(user_data).T)
-
-                # Display Result
-                if prediction == 1:
-                    st.error(f"🚨 User {user_id} is **SUSPICIOUS** 🚨")
-                else:
-                    st.success(f"✅ User {user_id} is **NOT Suspicious** ✅")
-
-                # Reasoning
-                st.subheader("🧐 Why is this user suspicious?")
-                if prediction == 1:
-                    reasons = []
-                    if user_data['actual_hours'] > 10:
-                        reasons.append("Unusually high watch hours.")
-                    if user_data['_pause'] == 0 and user_data['_seek'] == 0:
-                        reasons.append("No pauses or seeks detected.")
-                    if user_data['unique_lessons'] < 2:
-                        reasons.append("Very few unique lessons watched.")
-                    
-                    for reason in reasons:
-                        st.write(f"🔸 {reason}")
-
-            else:
-                st.warning("⚠️ User ID not found in the uploaded data.")
+    st.download_button("Download Suspicious Users", suspicious_users.to_csv(index=False), "suspicious_users.csv", "text/csv")
