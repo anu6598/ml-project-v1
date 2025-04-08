@@ -128,3 +128,28 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 st.caption("This chart shows total API requests over time. Spikes may indicate bot surges.")
 
+st.subheader("🧪 Anomaly Detection Table")
+
+# You can define an anomaly condition here (can tweak as needed)
+anomalies = df[
+    (df['label'] == 'Bot') |
+    (df['total_requests'] > 100) |
+    (df['session_duration'] < 10)
+]
+
+# Select the columns you want to display
+anomaly_table = anomalies[[
+    'x_real_ip',
+    'total_requests',
+    'session_duration',
+    'num_user_agents',
+    'num_api_paths',
+    'vpn_flag_count',
+    'label',
+    'first_request_time',
+    'last_request_time'
+]].sort_values(by='total_requests', ascending=False)
+
+# Display in Streamlit
+st.dataframe(anomaly_table, use_container_width=True)
+st.caption("⚠️ This table shows IPs with suspicious behavior detected based on total requests, session duration, VPN flags, etc.")
