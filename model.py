@@ -1,67 +1,89 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import IsolationForest
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.ensemble import IsolationForest
+from datetime import datetime
 
-st.set_page_config(page_title="Bot Detection from Signup Logs", layout="wide")
-st.title("🚨 Bot vs Human Signup Detection")
+st.set_page_config(page_title="Signup Bot Detector", layout="wide")
+st.title("🤖 Signup Bot Detector")
+st.write("Upload your API log CSV to identify bot-like signup activity and gain insights.")
 
-# File upload
-uploaded_file = st.file_uploader("Upload CSV File with API Signup Logs", type=["csv"])
+# Upload CSV
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
 
-if uploaded_file is not None:
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
+    st.success("File uploaded successfully!")
 
-    # Data Preprocessing
+    # Convert datetime columns
     df['first_request_time'] = pd.to_datetime(df['first_request_time'])
     df['last_request_time'] = pd.to_datetime(df['last_request_time'])
     df['duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
+    df['requests_per_second'] = df['total_requests'] / df['duration'].replace(0, 1)
 
-    # Create binary VPN flag
-    df['vpn_flagged'] = df['vpn_detection_flags'].apply(lambda x: 1 if str(x).lower() in ['yes', 'true', '1'] else 0)
+    # Fill NA values
+    df.fillna({
+        'unique_user_agents': 0,
+        'api_paths_called': '',
+        'vpn_detection_flags': ''
+    }, inplace=True)
 
-    # Features for ML
-    features = df[['total_requests', 'duration', 'unique_user_agents', 'vpn_flagged']].copy()
+    # Feature Engineering
+    df['api_path_count'] = df['api_paths_called'].apply(lambda x: len(str(x).split(',')))
+    df['vpn_flagged'] = df['vpn_detection_flags'].apply(lambda x: 1 if 'vpn' in str(x).lower() else 0)
 
-    # Fill missing or invalid values
-    features = features.fillna(0)
-    clf = IsolationForest(contamination=0.1, random_state=42)
-    df['bot_prediction'] = clf.fit_predict(features)
-    df['label'] = df['bot_prediction'].apply(lambda x: 'Bot' if x == -1 else 'Genuine')
+    # Model
+    features = df[['total_requests', 'unique_user_agents', 'duration', 'requests_per_second', 'api_path_count', 'vpn_flagged']]
+    model = IsolationForest(contamination=0.05, random_state=42)
+    df['prediction'] = model.fit_predict(features)
+    df['label'] = df['prediction'].apply(lambda x: 'Bot' if x == -1 else 'Genuine')
 
-    st.success("✅ Bot Detection Complete")
-    st.dataframe(df[['x_real_ip', 'total_requests', 'duration', 'unique_user_agents', 'vpn_flagged', 'label']])
+    # Display dataframe
+    st.subheader("📊 Labeled Data")
+    st.dataframe(df[['x_real_ip', 'label', 'total_requests', 'unique_user_agents', 'vpn_flagged']])
 
-    # Download option
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Results as CSV", csv, "classified_signups.csv", "text/csv")
+    # Download
+    st.download_button("Download Result as CSV", df.to_csv(index=False), "bot_detection_output.csv", "text/csv")
 
-    # High-level insights
-    st.subheader("📊 Top 10 Insights")
-    insights = []
+    # Visual Insights
+    st.subheader("🔍 Key Insights with Graphs")
+    insights = {
+        'Signups Over Time': ('first_request_time', 'count'),
+        'Bot vs Genuine': ('label', 'count'),
+        'VPN Usage Distribution': ('vpn_flagged', 'count'),
+        'Requests per Second Distribution': ('requests_per_second', 'hist'),
+        'Duration of Sessions': ('duration', 'hist'),
+        'API Path Count Distribution': ('api_path_count', 'hist'),
+        'Unique User Agents vs Requests': ('scatter', ('unique_user_agents', 'total_requests')),
+        'Bot Detection by VPN': ('bar', ('vpn_flagged', 'label')),
+        'Bot Count by API Path Count': ('bar', ('api_path_count', 'label')),
+        'Daily Signup Spike': ('line', 'first_request_time')
+    }
 
-    insights.append(f"1. Total Records: {len(df)}")
-    insights.append(f"2. Bots Detected: {sum(df['label'] == 'Bot')} ({sum(df['label'] == 'Bot') / len(df):.2%})")
-    insights.append(f"3. Genuine Users: {sum(df['label'] == 'Genuine')} ({sum(df['label'] == 'Genuine') / len(df):.2%})")
-    insights.append(f"4. Average Duration for Bots: {df[df['label'] == 'Bot']['duration'].mean():.2f} sec")
-    insights.append(f"5. Average Duration for Humans: {df[df['label'] == 'Genuine']['duration'].mean():.2f} sec")
-    insights.append(f"6. Most Common VPN Usage among Bots: {df[df['label'] == 'Bot']['vpn_flagged'].sum()} IPs")
-    insights.append(f"7. Top Suspicious IP: {df[df['label'] == 'Bot'].sort_values('total_requests', ascending=False)['x_real_ip'].head(1).values[0]}")
-    insights.append(f"8. IP with Most Unique User Agents: {df.sort_values('unique_user_agents', ascending=False)['x_real_ip'].head(1).values[0]}")
-    insights.append(f"9. Average Requests by Bots: {df[df['label'] == 'Bot']['total_requests'].mean():.2f}")
-    insights.append(f"10. VPN Usage Rate: {df['vpn_flagged'].mean():.2%}")
+    for title, config in insights.items():
+        st.markdown(f"### {title}")
+        fig, ax = plt.subplots(figsize=(8, 4))
 
-    for i in insights:
-        st.markdown(f"- {i}")
+        if config[1] == 'count':
+            sns.countplot(data=df, x=config[0], ax=ax)
 
-    # Optional: Chart
-    st.subheader("📈 Signup Volume by Type")
-    chart_data = df.groupby('label')['x_real_ip'].count().reset_index(name='count')
-    fig, ax = plt.subplots()
-    sns.barplot(data=chart_data, x='label', y='count', ax=ax)
-    st.pyplot(fig)
+        elif config[1] == 'hist':
+            sns.histplot(data=df, x=config[0], bins=30, kde=True, ax=ax)
+
+        elif config[0] == 'scatter':
+            sns.scatterplot(data=df, x=config[1][0], y=config[1][1], hue='label', ax=ax)
+
+        elif config[0] == 'bar':
+            sns.barplot(data=df, x=config[1][0], y=config[1][1], estimator=lambda x: sum(pd.Series(x) == 'Bot'), ax=ax)
+
+        elif config[1] == 'line':
+            df_grouped = df.groupby(df[config[0]].dt.date).size()
+            ax.plot(df_grouped.index, df_grouped.values, marker='o')
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Signups")
+
+        st.pyplot(fig)
 
 else:
-    st.info("📂 Upload a CSV file to get started. Headers expected: x_real_ip, total_requests, first_request_time, last_request_time, unique_user_agents, api_paths_called, vpn_detection_flags")
+    st.info("Please upload a CSV file to begin analysis.")
