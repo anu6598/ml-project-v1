@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import ollama
+import plotly.express as px
 from io import StringIO
-from datetime import datetime
 
 # Set page config
 st.set_page_config(page_title="Bot Detection Dashboard", layout="wide")
@@ -13,7 +12,6 @@ st.title("🚨 Signup Bot Detection Dashboard")
 # Sidebar summary and download
 with st.sidebar:
     st.header("📊 Summary & Download")
-    download_ready = False
 
 # File uploader
 uploaded_file = st.file_uploader("Upload your API logs CSV", type=["csv"])
@@ -61,66 +59,50 @@ if uploaded_file:
 
     st.subheader("🔍 Insights from the Data")
 
-    # Visualization 1: Bot vs Genuine
+    # Graph 1: Bot vs Genuine
     col1, col2 = st.columns(2)
     with col1:
         count_data = df['label'].value_counts()
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4, 3))
         sns.barplot(x=count_data.index, y=count_data.values, ax=ax, palette="Set2")
         ax.set_title("Bot vs Genuine Signups")
         ax.set_ylabel("Number of Unique IPs")
         st.pyplot(fig)
-        st.caption("This chart shows the count of unique IP addresses identified as bots or genuine users.")
+        st.caption("This chart shows the count of IPs identified as bots or genuine users based on rule-based detection.")
 
-    # Visualization 2: Session duration by label
+    # Graph 2: Session Duration
     with col2:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4, 3))
         sns.boxplot(x='label', y='session_duration', data=df, ax=ax, palette="coolwarm")
         ax.set_title("Session Duration by Label")
         ax.set_ylabel("Session Duration (seconds)")
         st.pyplot(fig)
-        st.caption("Bot users often have very short session durations compared to genuine users.")
+        st.caption("Bots tend to have shorter session durations compared to genuine users.")
 
-    # Additional insights
+    # Graph 3: Bot Request Distribution
     col3, col4 = st.columns(2)
     with col3:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4, 3))
         sns.histplot(df[df['label'] == 'Bot']['total_requests'], bins=30, color='red', ax=ax)
         ax.set_title("Bot Users: Total Requests Distribution")
         st.pyplot(fig)
-        st.caption("Bots usually make an unusually high number of requests in a short span of time.")
+        st.caption("Bots usually make a high number of requests in a short time.")
 
+    # Graph 4: Genuine Request Distribution
     with col4:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(4, 3))
         sns.histplot(df[df['label'] == 'Genuine']['total_requests'], bins=30, color='green', ax=ax)
         ax.set_title("Genuine Users: Total Requests Distribution")
         st.pyplot(fig)
-        st.caption("Genuine users typically generate fewer total API requests.")
+        st.caption("Genuine users usually make fewer requests over a longer period.")
 
-    # Ollama Chat Interface
-    st.subheader("🧠 Ask Questions About Your Data")
+    # 📈 Line Graph: Unique IPs over Time
+    st.subheader("📅 Unique Signups Over Time")
+    df['request_day'] = df['first_request_time'].dt.date
+    ip_counts = df.groupby('request_day')['x_real_ip'].nunique().reset_index()
+    ip_counts.columns = ['Date', 'Unique IPs']
 
-    user_input = st.text_input("Ask a question about the signup data:")
-
-    if user_input:
-        # Convert dataframe to string
-        df_csv_string = df.to_csv(index=False)
-
-        prompt = f"""
-        You are a data analyst. Here is the signup API log data:
-
-        {df_csv_string}
-
-        Now answer this question: {user_input}
-        """
-
-        try:
-            response = ollama.chat(
-                model="llama3",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            st.markdown(f"**Answer:** {response['message']['content']}")
-        except Exception as e:
-            st.error("Error using Ollama. Please ensure it's running and accessible.")
+    line_fig = px.line(ip_counts, x='Date', y='Unique IPs', markers=True,
+                       title="Unique IPs Making First Requests Over Time")
+    st.plotly_chart(line_fig, use_container_width=True)
+    st.caption("Each point represents the number of unique IPs that made their first request on that day. Spikes may indicate abnormal or bot traffic.")
