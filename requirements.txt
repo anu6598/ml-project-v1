@@ -4,4 +4,4 @@ numpy
 plotly
 Kmeans
 scikit-learn
-
+ollama
