@@ -96,13 +96,25 @@ if uploaded_file:
         st.pyplot(fig)
         st.caption("Genuine users usually make fewer requests over a longer period.")
 
-    # 📈 Line Graph: Unique IPs over Time
-    st.subheader("📅 Unique Signups Over Time")
-    df['request_day'] = df['first_request_time'].dt.date
-    ip_counts = df.groupby('request_day')['x_real_ip'].nunique().reset_index()
-    ip_counts.columns = ['Date', 'Unique IPs']
+        # 📈 Line Graph: Daily Unique Signups
+    st.subheader("📅 Daily Signup Spike Detection")
 
-    line_fig = px.line(ip_counts, x='Date', y='Unique IPs', markers=True,
-                       title="Unique IPs Making First Requests Over Time")
-    st.plotly_chart(line_fig, use_container_width=True)
-    st.caption("Each point represents the number of unique IPs that made their first request on that day. Spikes may indicate abnormal or bot traffic.")
+    # Convert timestamp to just the date
+    df['signup_date'] = df['first_request_time'].dt.date
+
+    # Count unique IPs per day
+    daily_signups = df.groupby('signup_date')['x_real_ip'].nunique().reset_index()
+    daily_signups.columns = ['Date', 'Unique_Signups']
+
+    # Plot the line chart
+    fig = px.line(daily_signups, x='Date', y='Unique_Signups', markers=True,
+                  title="Unique Signups per Day")
+
+    fig.update_layout(
+        xaxis_title="Date",
+        yaxis_title="Number of Unique IPs (Signups)",
+        title_x=0.5
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("This chart shows how many unique IP addresses signed up each day. A sudden spike may indicate bot activity.")
