@@ -6,3 +6,4 @@ Kmeans
 scikit-learn
 ollama
 matplotlib
+seaborn
