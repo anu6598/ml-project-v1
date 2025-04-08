@@ -1,44 +1,48 @@
+# streamlit_app.py
+
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import IsolationForest
+import joblib
+from datetime import datetime
+import ollama
 
-def load_data(uploaded_file):
-    df = pd.read_csv(uploaded_file)
-    df['created_on'] = pd.to_datetime(df['created_on'], errors='coerce')
-    df['last_updated'] = pd.to_datetime(df['last_updated'], errors='coerce')
-    return df
+st.title("🚨 Human vs Bot Signup Detection")
 
-def preprocess_data(df):
-    user_activity = df.groupby('user_id').agg(
-        rate_limit_violations=('limit_name', 'count'),
-        unique_devices=('device_id', 'nunique'),
-        unique_ips=('ip', 'nunique'),
-        first_access=('created_on', 'min'),
-        last_access=('last_updated', 'max')
-    ).reset_index()
-    user_activity['active_days'] = (user_activity['last_access'] - user_activity['first_access']).dt.days + 1
-    return user_activity
+# Load model
+model = joblib.load("signup_bot_detector.pkl")
 
-def detect_anomalies(df):
-    model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-    df['anomaly_score'] = model.fit_predict(df[['rate_limit_violations', 'unique_devices', 'unique_ips', 'active_days']])
-    suspicious_users = df[df['anomaly_score'] == -1]
-    return suspicious_users
-
-st.title("Piracy User Detection System")
-
-uploaded_file = st.file_uploader("Upload Video Rate Limit Log (CSV)", type=['csv'])
+uploaded_file = st.file_uploader("Upload API Logs CSV", type=["csv"])
 
 if uploaded_file:
-    df = load_data(uploaded_file)
-    st.write("### Raw Data Sample")
-    st.write(df.head())
+    df = pd.read_csv(uploaded_file)
+
+    df['first_request_time'] = pd.to_datetime(df['first_request_time'])
+    df['last_request_time'] = pd.to_datetime(df['last_request_time'])
+    df['session_duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
+    df['requests_per_minute'] = df['total_requests'] / (df['session_duration'] / 60 + 1)
+    df['api_paths_called_count'] = df['api_paths_called'].apply(lambda x: len(eval(x)) if pd.notnull(x) else 0)
+    df['vpn_flag_count'] = df['vpn_detection_flags'].apply(lambda x: len(set(str(x).split(','))) if pd.notnull(x) else 0)
+    df.fillna(0, inplace=True)
+
+    X = df[['total_requests', 'session_duration', 'requests_per_minute', 
+            'unique_user_agents', 'api_paths_called_count', 'vpn_flag_count']]
     
-    user_data = preprocess_data(df)
-    suspicious_users = detect_anomalies(user_data)
+    df['prediction'] = model.predict(X)
+    df['prediction_label'] = df['prediction'].map({0: 'Human', 1: 'Bot'})
     
-    st.write("### Suspicious Users Detected")
-    st.write(suspicious_users[['user_id', 'rate_limit_violations', 'unique_devices', 'unique_ips', 'active_days']])
-    
-    st.download_button("Download Suspicious Users", suspicious_users.to_csv(index=False), "suspicious_users.csv", "text/csv")
+    st.dataframe(df[['x_real_ip', 'total_requests', 'session_duration', 'prediction_label']])
+
+    # Chatbot interface (with Ollama)
+    st.subheader("🧠 Ask your data anything")
+    user_input = st.text_input("Ask something like: 'Which IPs had the most OTP requests today?'")
+
+    if user_input:
+        # Chat with the data (via Ollama)
+        response = ollama.chat(
+            model='llama3',
+            messages=[
+                {"role": "system", "content": "You are a data analyst. You answer based on the CSV data provided."},
+                {"role": "user", "content": f"{user_input}\nHere is the CSV data:\n{df.to_csv(index=False)}"}
+            ]
+        )
+        st.write(response['message']['content'])
