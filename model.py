@@ -106,15 +106,25 @@ if uploaded_file:
     daily_signups = df.groupby('signup_date')['x_real_ip'].nunique().reset_index()
     daily_signups.columns = ['Date', 'Unique_Signups']
 
-    # Plot the line chart
-    fig = px.line(daily_signups, x='Date', y='Unique_Signups', markers=True,
-                  title="Unique Signups per Day")
+    # Plot the line chart# 📈 Line Graph: Total Requests over Time
+st.subheader("📅 Total Requests Over Time")
 
-    fig.update_layout(
-        xaxis_title="Date",
-        yaxis_title="Number of Unique IPs (Signups)",
-        title_x=0.5
-    )
+# Round start_time to hourly granularity for better chart readability
+df['start_hour'] = df['first_request_time'].dt.floor('H')
 
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("This chart shows how many unique IP addresses signed up each day. A sudden spike may indicate bot activity.")
+# Group by start_hour and sum total requests
+request_trend = df.groupby('start_hour')['total_requests'].sum().reset_index()
+
+# Plot
+fig = px.line(request_trend, x='start_hour', y='total_requests', markers=True,
+              title="Total Requests Over Time")
+
+fig.update_layout(
+    xaxis_title="Start Time (Hourly)",
+    yaxis_title="Total Requests",
+    title_x=0.5
+)
+
+st.plotly_chart(fig, use_container_width=True)
+st.caption("This chart shows total API requests over time. Spikes may indicate bot surges.")
+
