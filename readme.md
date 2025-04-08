@@ -17,3 +17,11 @@ numpy
 plotly
 arima
 statsmodels
+streamlit
+pandas
+scikit-learn
+ollama
+langchain
+matplotlib
+joblib
+
