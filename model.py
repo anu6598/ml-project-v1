@@ -1,3 +1,7 @@
+import os
+os.environ["OLLAMA_HOST"] = "http://localhost:11434"
+
+
 # streamlit_app.py
 
 import streamlit as st
