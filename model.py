@@ -2,47 +2,42 @@
 
 import streamlit as st
 import pandas as pd
-import joblib
 from datetime import datetime
 import ollama
 
-st.title("🚨 Human vs Bot Signup Detection")
+st.set_page_config(page_title="Human vs Bot Q&A", page_icon="🤖")
+st.title("🤖 Human vs Bot Signup Logs — Q&A Powered by Ollama")
 
-# Load model
-model = joblib.load("signup_bot_detector.pkl")
-
-uploaded_file = st.file_uploader("Upload API Logs CSV", type=["csv"])
+uploaded_file = st.file_uploader("📂 Upload API Logs CSV", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
-    df['first_request_time'] = pd.to_datetime(df['first_request_time'])
-    df['last_request_time'] = pd.to_datetime(df['last_request_time'])
-    df['session_duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
-    df['requests_per_minute'] = df['total_requests'] / (df['session_duration'] / 60 + 1)
-    df['api_paths_called_count'] = df['api_paths_called'].apply(lambda x: len(eval(x)) if pd.notnull(x) else 0)
-    df['vpn_flag_count'] = df['vpn_detection_flags'].apply(lambda x: len(set(str(x).split(','))) if pd.notnull(x) else 0)
-    df.fillna(0, inplace=True)
+    # Display raw data preview
+    st.subheader("📄 Uploaded Data Preview")
+    st.dataframe(df.head())
 
-    X = df[['total_requests', 'session_duration', 'requests_per_minute', 
-            'unique_user_agents', 'api_paths_called_count', 'vpn_flag_count']]
-    
-    df['prediction'] = model.predict(X)
-    df['prediction_label'] = df['prediction'].map({0: 'Human', 1: 'Bot'})
-    
-    st.dataframe(df[['x_real_ip', 'total_requests', 'session_duration', 'prediction_label']])
+    # Optional preprocessing (if needed by you or for context)
+    try:
+        df['first_request_time'] = pd.to_datetime(df['first_request_time'])
+        df['last_request_time'] = pd.to_datetime(df['last_request_time'])
+        df['session_duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
+    except:
+        st.warning("Couldn't parse datetime columns automatically.")
 
-    # Chatbot interface (with Ollama)
-    st.subheader("🧠 Ask your data anything")
-    user_input = st.text_input("Ask something like: 'Which IPs had the most OTP requests today?'")
+    # Ask Questions Section
+    st.subheader("💬 Ask your data anything")
+
+    user_input = st.text_input("🔎 E.g. 'Which IP had the highest total requests on April 3rd?'")
 
     if user_input:
-        # Chat with the data (via Ollama)
-        response = ollama.chat(
-            model='llama3',
-            messages=[
-                {"role": "system", "content": "You are a data analyst. You answer based on the CSV data provided."},
-                {"role": "user", "content": f"{user_input}\nHere is the CSV data:\n{df.to_csv(index=False)}"}
-            ]
-        )
-        st.write(response['message']['content'])
+        with st.spinner("Thinking with Ollama..."):
+            response = ollama.chat(
+                model="llama3",  # or any model you've downloaded locally
+                messages=[
+                    {"role": "system", "content": "You're a data analyst. Answer based only on the CSV provided."},
+                    {"role": "user", "content": f"{user_input}\n\nHere is the CSV data:\n{df.to_csv(index=False)}"}
+                ]
+            )
+            st.markdown("### 🧠 Answer")
+            st.write(response['message']['content'])
