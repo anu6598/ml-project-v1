@@ -2,88 +2,125 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.ensemble import IsolationForest
+import ollama
+from io import StringIO
 from datetime import datetime
 
-st.set_page_config(page_title="Signup Bot Detector", layout="wide")
-st.title("🤖 Signup Bot Detector")
-st.write("Upload your API log CSV to identify bot-like signup activity and gain insights.")
+# Set page config
+st.set_page_config(page_title="Bot Detection Dashboard", layout="wide")
+st.title("🚨 Signup Bot Detection Dashboard")
 
-# Upload CSV
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+# Sidebar summary and download
+with st.sidebar:
+    st.header("📊 Summary & Download")
+    download_ready = False
+
+# File uploader
+uploaded_file = st.file_uploader("Upload your API logs CSV", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    st.success("File uploaded successfully!")
 
-    # Convert datetime columns
-    df['first_request_time'] = pd.to_datetime(df['first_request_time'])
-    df['last_request_time'] = pd.to_datetime(df['last_request_time'])
-    df['duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
-    df['requests_per_second'] = df['total_requests'] / df['duration'].replace(0, 1)
-
-    # Fill NA values
-    df.fillna({
-        'unique_user_agents': 0,
-        'api_paths_called': '',
-        'vpn_detection_flags': ''
-    }, inplace=True)
+    # Preprocessing
+    df['first_request_time'] = pd.to_datetime(df['first_request_time'], errors='coerce')
+    df['last_request_time'] = pd.to_datetime(df['last_request_time'], errors='coerce')
+    df['session_duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
+    df['api_paths_called'] = df['api_paths_called'].fillna('').astype(str)
+    df['unique_user_agents'] = df['unique_user_agents'].fillna('').astype(str)
+    df['vpn_detection_flags'] = df['vpn_detection_flags'].fillna('').astype(str)
 
     # Feature Engineering
-    df['api_path_count'] = df['api_paths_called'].apply(lambda x: len(str(x).split(',')))
-    df['vpn_flagged'] = df['vpn_detection_flags'].apply(lambda x: 1 if 'vpn' in str(x).lower() else 0)
+    df['num_user_agents'] = df['unique_user_agents'].apply(lambda x: len(set(x.split(','))))
+    df['num_api_paths'] = df['api_paths_called'].apply(lambda x: len(set(x.split(','))))
+    df['vpn_flag_count'] = df['vpn_detection_flags'].apply(lambda x: x.count('True'))
 
-    # Model
-    features = df[['total_requests', 'unique_user_agents', 'duration', 'requests_per_second', 'api_path_count', 'vpn_flagged']]
-    model = IsolationForest(contamination=0.05, random_state=42)
-    df['prediction'] = model.fit_predict(features)
-    df['label'] = df['prediction'].apply(lambda x: 'Bot' if x == -1 else 'Genuine')
+    # Rule-based Labeling
+    def detect_bot(row):
+        score = 0
+        if row['total_requests'] > 100: score += 1
+        if row['session_duration'] and row['session_duration'] < 10: score += 1
+        if row['num_user_agents'] > 3: score += 1
+        if row['num_api_paths'] > 10: score += 1
+        if row['vpn_flag_count'] > 0: score += 1
+        return 'Bot' if score >= 3 else 'Genuine'
 
-    # Display dataframe
-    st.subheader("📊 Labeled Data")
-    st.dataframe(df[['x_real_ip', 'label', 'total_requests', 'unique_user_agents', 'vpn_flagged']])
+    df['label'] = df.apply(detect_bot, axis=1)
 
-    # Download
-    st.download_button("Download Result as CSV", df.to_csv(index=False), "bot_detection_output.csv", "text/csv")
+    # Sidebar summary
+    total = len(df)
+    bots = (df['label'] == 'Bot').sum()
+    genuine = total - bots
+    bot_pct = round((bots / total) * 100, 2)
 
-    # Visual Insights
-    st.subheader("🔍 Key Insights with Graphs")
-    insights = {
-        'Signups Over Time': ('first_request_time', 'count'),
-        'Bot vs Genuine': ('label', 'count'),
-        'VPN Usage Distribution': ('vpn_flagged', 'count'),
-        'Requests per Second Distribution': ('requests_per_second', 'hist'),
-        'Duration of Sessions': ('duration', 'hist'),
-        'API Path Count Distribution': ('api_path_count', 'hist'),
-        'Unique User Agents vs Requests': ('scatter', ('unique_user_agents', 'total_requests')),
-        'Bot Detection by VPN': ('bar', ('vpn_flagged', 'label')),
-        'Bot Count by API Path Count': ('bar', ('api_path_count', 'label')),
-        'Daily Signup Spike': ('line', 'first_request_time')
-    }
+    with st.sidebar:
+        st.markdown(f"**Total Signups:** {total}")
+        st.markdown(f"**Bots Detected:** {bots} ({bot_pct}%)")
+        st.markdown(f"**Genuine Signups:** {genuine}")
+        csv_download = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Processed CSV", csv_download, file_name="processed_log.csv")
 
-    for title, config in insights.items():
-        st.markdown(f"### {title}")
-        fig, ax = plt.subplots(figsize=(8, 4))
+    st.subheader("🔍 Insights from the Data")
 
-        if config[1] == 'count':
-            sns.countplot(data=df, x=config[0], ax=ax)
-
-        elif config[1] == 'hist':
-            sns.histplot(data=df, x=config[0], bins=30, kde=True, ax=ax)
-
-        elif config[0] == 'scatter':
-            sns.scatterplot(data=df, x=config[1][0], y=config[1][1], hue='label', ax=ax)
-
-        elif config[0] == 'bar':
-            sns.barplot(data=df, x=config[1][0], y=config[1][1], estimator=lambda x: sum(pd.Series(x) == 'Bot'), ax=ax)
-
-        elif config[1] == 'line':
-            df_grouped = df.groupby(df[config[0]].dt.date).size()
-            ax.plot(df_grouped.index, df_grouped.values, marker='o')
-            ax.set_xlabel("Date")
-            ax.set_ylabel("Signups")
-
+    # Visualization 1: Bot vs Genuine
+    col1, col2 = st.columns(2)
+    with col1:
+        count_data = df['label'].value_counts()
+        fig, ax = plt.subplots()
+        sns.barplot(x=count_data.index, y=count_data.values, ax=ax, palette="Set2")
+        ax.set_title("Bot vs Genuine Signups")
+        ax.set_ylabel("Number of Unique IPs")
         st.pyplot(fig)
+        st.caption("This chart shows the count of unique IP addresses identified as bots or genuine users.")
 
-else:
-    st.info("Please upload a CSV file to begin analysis.")
+    # Visualization 2: Session duration by label
+    with col2:
+        fig, ax = plt.subplots()
+        sns.boxplot(x='label', y='session_duration', data=df, ax=ax, palette="coolwarm")
+        ax.set_title("Session Duration by Label")
+        ax.set_ylabel("Session Duration (seconds)")
+        st.pyplot(fig)
+        st.caption("Bot users often have very short session durations compared to genuine users.")
+
+    # Additional insights
+    col3, col4 = st.columns(2)
+    with col3:
+        fig, ax = plt.subplots()
+        sns.histplot(df[df['label'] == 'Bot']['total_requests'], bins=30, color='red', ax=ax)
+        ax.set_title("Bot Users: Total Requests Distribution")
+        st.pyplot(fig)
+        st.caption("Bots usually make an unusually high number of requests in a short span of time.")
+
+    with col4:
+        fig, ax = plt.subplots()
+        sns.histplot(df[df['label'] == 'Genuine']['total_requests'], bins=30, color='green', ax=ax)
+        ax.set_title("Genuine Users: Total Requests Distribution")
+        st.pyplot(fig)
+        st.caption("Genuine users typically generate fewer total API requests.")
+
+    # Ollama Chat Interface
+    st.subheader("🧠 Ask Questions About Your Data")
+
+    user_input = st.text_input("Ask a question about the signup data:")
+
+    if user_input:
+        # Convert dataframe to string
+        df_csv_string = df.to_csv(index=False)
+
+        prompt = f"""
+        You are a data analyst. Here is the signup API log data:
+
+        {df_csv_string}
+
+        Now answer this question: {user_input}
+        """
+
+        try:
+            response = ollama.chat(
+                model="llama3",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            st.markdown(f"**Answer:** {response['message']['content']}")
+        except Exception as e:
+            st.error("Error using Ollama. Please ensure it's running and accessible.")
