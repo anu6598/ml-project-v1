@@ -17,8 +17,8 @@ if uploaded_file is not None:
 
     # 2. Basic Preprocessing - assuming a column named 'timestamp' and 'user_id'
     if 'timestamp' in df.columns:
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['date'] = df['timestamp'].dt.date
+        df['start_time'] = pd.to_datetime(df['start_time'])
+        df['date'] = df['start_time'].dt.date
         signup_counts = df.groupby('date').size().reset_index(name='signup_count')
 
         st.subheader("📈 Daily Signup Count")
