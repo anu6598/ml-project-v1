@@ -5,3 +5,5 @@ plotly
 Kmeans
 scikit-learn
 ollama
+requests
+gitingest
