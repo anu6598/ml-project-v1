@@ -1,65 +1,67 @@
-# signup_spike_detector.py
-
-import pandas as pd
 import streamlit as st
-import ollama
+import pandas as pd
+import numpy as np
 from sklearn.ensemble import IsolationForest
-from datetime import datetime
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# 1. Upload CSV API Logs
-st.title("Signup Spike & Bot Detection Tool")
-uploaded_file = st.file_uploader("Upload your API Logs CSV", type=["csv"])
+st.set_page_config(page_title="Bot Detection from Signup Logs", layout="wide")
+st.title("🚨 Bot vs Human Signup Detection")
+
+# File upload
+uploaded_file = st.file_uploader("Upload CSV File with API Signup Logs", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.subheader("Raw Data Preview")
-    st.write(df.head())
 
-    # 2. Basic Preprocessing - assuming a column named 'timestamp' and 'user_id'
-    if 'timestamp' in df.columns:
-        df['start_time'] = pd.to_datetime(df['start_time'])
-        df['date'] = df['start_time'].dt.date
-        signup_counts = df.groupby('date').size().reset_index(name='signup_count')
+    # Data Preprocessing
+    df['first_request_time'] = pd.to_datetime(df['first_request_time'])
+    df['last_request_time'] = pd.to_datetime(df['last_request_time'])
+    df['duration'] = (df['last_request_time'] - df['first_request_time']).dt.total_seconds()
 
-        st.subheader("📈 Daily Signup Count")
-        st.line_chart(signup_counts.set_index('date'))
+    # Create binary VPN flag
+    df['vpn_flagged'] = df['vpn_detection_flags'].apply(lambda x: 1 if str(x).lower() in ['yes', 'true', '1'] else 0)
 
-        # 3. Detect Spikes using Isolation Forest
-        model = IsolationForest(contamination=0.1, random_state=42)
-        signup_counts['is_anomaly'] = model.fit_predict(signup_counts[['signup_count']])
-        signup_counts['anomaly'] = signup_counts['is_anomaly'].apply(lambda x: 'Spike' if x == -1 else 'Normal')
+    # Features for ML
+    features = df[['total_requests', 'duration', 'unique_user_agents', 'vpn_flagged']].copy()
 
-        st.subheader("🔍 Anomaly Detection")
-        st.write(signup_counts[['date', 'signup_count', 'anomaly']])
+    # Fill missing or invalid values
+    features = features.fillna(0)
+    clf = IsolationForest(contamination=0.1, random_state=42)
+    df['bot_prediction'] = clf.fit_predict(features)
+    df['label'] = df['bot_prediction'].apply(lambda x: 'Bot' if x == -1 else 'Genuine')
 
-        st.markdown("---")
-        st.subheader("💬 Ask Questions about the Data")
-        question = st.text_input("Ask a question")
-        if question:
-            response = ollama.chat(
-                model='llama3',
-                messages=[
-                    {'role': 'system', 'content': f"You are a data analyst. Here is the dataset:\n{signup_counts.to_csv(index=False)}"},
-                    {'role': 'user', 'content': question}
-                ]
-            )
-            st.write(response['message']['content'])
+    st.success("✅ Bot Detection Complete")
+    st.dataframe(df[['x_real_ip', 'total_requests', 'duration', 'unique_user_agents', 'vpn_flagged', 'label']])
 
-        st.markdown("---")
-        st.subheader("🤖 Bot Signup Detection")
+    # Download option
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Results as CSV", csv, "classified_signups.csv", "text/csv")
 
-        # Feature Engineering (example: frequency per minute per IP/email etc.)
-        if 'ip_address' in df.columns and 'email' in df.columns:
-            df['minute'] = df['timestamp'].dt.floor('T')
-            freq_features = df.groupby(['ip_address', 'minute']).size().reset_index(name='attempts')
+    # High-level insights
+    st.subheader("📊 Top 10 Insights")
+    insights = []
 
-            model_bot = IsolationForest(contamination=0.05)
-            freq_features['is_bot'] = model_bot.fit_predict(freq_features[['attempts']])
-            freq_features['bot_label'] = freq_features['is_bot'].apply(lambda x: 'Bot' if x == -1 else 'Genuine')
+    insights.append(f"1. Total Records: {len(df)}")
+    insights.append(f"2. Bots Detected: {sum(df['label'] == 'Bot')} ({sum(df['label'] == 'Bot') / len(df):.2%})")
+    insights.append(f"3. Genuine Users: {sum(df['label'] == 'Genuine')} ({sum(df['label'] == 'Genuine') / len(df):.2%})")
+    insights.append(f"4. Average Duration for Bots: {df[df['label'] == 'Bot']['duration'].mean():.2f} sec")
+    insights.append(f"5. Average Duration for Humans: {df[df['label'] == 'Genuine']['duration'].mean():.2f} sec")
+    insights.append(f"6. Most Common VPN Usage among Bots: {df[df['label'] == 'Bot']['vpn_flagged'].sum()} IPs")
+    insights.append(f"7. Top Suspicious IP: {df[df['label'] == 'Bot'].sort_values('total_requests', ascending=False)['x_real_ip'].head(1).values[0]}")
+    insights.append(f"8. IP with Most Unique User Agents: {df.sort_values('unique_user_agents', ascending=False)['x_real_ip'].head(1).values[0]}")
+    insights.append(f"9. Average Requests by Bots: {df[df['label'] == 'Bot']['total_requests'].mean():.2f}")
+    insights.append(f"10. VPN Usage Rate: {df['vpn_flagged'].mean():.2%}")
 
-            st.write(freq_features[['ip_address', 'minute', 'attempts', 'bot_label']])
+    for i in insights:
+        st.markdown(f"- {i}")
 
-    else:
-        st.error("The file must contain a 'timestamp' column to proceed.")
+    # Optional: Chart
+    st.subheader("📈 Signup Volume by Type")
+    chart_data = df.groupby('label')['x_real_ip'].count().reset_index(name='count')
+    fig, ax = plt.subplots()
+    sns.barplot(data=chart_data, x='label', y='count', ax=ax)
+    st.pyplot(fig)
+
 else:
-    st.info("👆 Upload a CSV to begin analysis.")
+    st.info("📂 Upload a CSV file to get started. Headers expected: x_real_ip, total_requests, first_request_time, last_request_time, unique_user_agents, api_paths_called, vpn_detection_flags")
