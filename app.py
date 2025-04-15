@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
 st.set_page_config(page_title="360° Attack Detection", layout="wide")
-
 st.title("🚨 360° API Attack Detection System")
 st.write("Upload your log file (1-day data) and detect suspicious activity across Web, iOS, and Android platforms.")
 
@@ -43,6 +43,15 @@ def summarize_detection(name, df, platform_col='platform'):
     summary['attack_type'] = name
     return summary
 
+def user_ip_summary(df, name):
+    return (
+        df.groupby('x_real_ip')['dr_uid']
+        .nunique()
+        .reset_index(name='Unique Users')
+        .sort_values('Unique Users', ascending=False)
+        .assign(attack_type=name)
+    )
+
 if uploaded_file:
     with st.spinner("Reading file..."):
         df = read_data(uploaded_file)
@@ -66,19 +75,42 @@ if uploaded_file:
                 summarize_detection("DDoS", ddos_df)
             ])
 
-            st.success("Detection completed!")
+            user_ip_breakdown = pd.concat([
+                user_ip_summary(brute_df, "Brute Force"),
+                user_ip_summary(vpn_df, "VPN/Geo Switch"),
+                user_ip_summary(bot_df, "Bot-like"),
+                user_ip_summary(ddos_df, "DDoS")
+            ])
+
+            st.success("✅ Detection completed!")
 
             st.subheader("📊 Attack Summary by Platform")
             st.dataframe(attack_summary)
 
-            st.subheader("🔐 Brute Force (top 10)")
-            st.dataframe(brute_df[['start_time', 'x_real_ip', 'request_path', 'dr_uid']].head(10))
+            fig = px.bar(
+                attack_summary,
+                x='platform',
+                y='Suspicious Requests',
+                color='attack_type',
+                barmode='group',
+                title="Threat Type Distribution by Platform"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-            st.subheader("🕵️ VPN/Geo Switch (top 10)")
-            st.dataframe(vpn_df[['start_time', 'x_country_code', 'dr_uid', 'x_real_ip']].head(10))
+            st.subheader("👥 Unique Users per IP in Attack Types")
+            st.dataframe(user_ip_breakdown)
 
-            st.subheader("🤖 Bots Detected (top 10)")
-            st.dataframe(bot_df[['start_time', 'user_agent', 'x_real_ip', 'duration']].head(10))
+            for label, df_attack in zip(
+                ["🔐 Brute Force", "🕵️ VPN/Geo Switch", "🤖 Bot-like", "🌊 DDoS"],
+                [brute_df, vpn_df, bot_df, ddos_df]
+            ):
+                st.subheader(label)
+                st.dataframe(df_attack[['start_time', 'x_real_ip', 'request_path', 'dr_uid']].head(10))
 
-            st.subheader("🌊 DDoS Suspects (top 10)")
-            st.dataframe(ddos_df[['start_time', 'x_real_ip', 'request_path']].head(10))
+                chart_data = (
+                    df_attack.groupby('minute')
+                    .size()
+                    .reset_index(name='Request Count')
+                )
+                fig = px.line(chart_data, x='minute', y='Request Count', title=f"{label} Over Time")
+                st.plotly_chart(fig, use_container_width=True)
