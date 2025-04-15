@@ -44,6 +44,8 @@ def summarize_detection(name, df, platform_col='platform'):
     return summary
 
 def user_ip_summary(df, name):
+    if 'dr_uid' not in df.columns:
+        df['dr_uid'] = "unknown"
     return (
         df.groupby('x_real_ip')['dr_uid']
         .nunique()
@@ -62,7 +64,6 @@ if uploaded_file:
 
     if st.button("🚨 Run Attack Detection"):
         with st.spinner("Detecting attack patterns..."):
-
             brute_df = detect_brute_force(df)
             vpn_df = detect_vpn_geo(df)
             bot_df = detect_bots(df)
@@ -82,11 +83,12 @@ if uploaded_file:
                 user_ip_summary(ddos_df, "DDoS")
             ])
 
-            st.success("✅ Detection completed!")
+        st.success("✅ Detection completed!")
 
-            st.subheader("📊 Attack Summary by Platform")
-            st.dataframe(attack_summary)
+        st.subheader("📊 Attack Summary by Platform")
+        st.dataframe(attack_summary)
 
+        if not attack_summary.empty:
             fig = px.bar(
                 attack_summary,
                 x='platform',
@@ -97,20 +99,20 @@ if uploaded_file:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            st.subheader("👥 Unique Users per IP in Attack Types")
-            st.dataframe(user_ip_breakdown)
+        st.subheader("👥 Unique Users per IP in Attack Types")
+        st.dataframe(user_ip_breakdown)
 
-            for label, df_attack in zip(
-                ["🔐 Brute Force", "🕵️ VPN/Geo Switch", "🤖 Bot-like", "🌊 DDoS"],
-                [brute_df, vpn_df, bot_df, ddos_df]
-            ):
-                st.subheader(label)
+        for label, df_attack in zip(
+            ["🔐 Brute Force", "🕵️ VPN/Geo Switch", "🤖 Bot-like", "🌊 DDoS"],
+            [brute_df, vpn_df, bot_df, ddos_df]
+        ):
+            st.subheader(label)
+
+            if not df_attack.empty:
                 st.dataframe(df_attack[['start_time', 'x_real_ip', 'request_path', 'dr_uid']].head(10))
 
-                chart_data = (
-                    df_attack.groupby('minute')
-                    .size()
-                    .reset_index(name='Request Count')
-                )
+                chart_data = df_attack.groupby('minute').size().reset_index(name='Request Count')
                 fig = px.line(chart_data, x='minute', y='Request Count', title=f"{label} Over Time")
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No suspicious activity detected for {label}.")
