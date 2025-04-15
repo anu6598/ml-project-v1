@@ -20,7 +20,7 @@ def read_data(file):
 def detect_brute_force(df):
     brute_df = df[df['request_path'].str.contains("login", case=False, na=False)]
     grouped = brute_df.groupby(['x_real_ip', 'minute']).size().reset_index(name='count')
-    brute_ips = grouped[grouped['count'] > 10]['x_real_ip'].unique()
+    brute_ips = grouped[grouped['count'] > 5]['x_real_ip'].unique()
     return df[df['x_real_ip'].isin(brute_ips)]
 
 def detect_vpn_geo(df):
@@ -35,7 +35,7 @@ def detect_bots(df):
 
 def detect_ddos(df):
     volume = df.groupby(['x_real_ip', 'minute']).size().reset_index(name='count')
-    high_vol_ips = volume[volume['count'] > 100]['x_real_ip'].unique()
+    high_vol_ips = volume[volume['count'] > 10]['x_real_ip'].unique()
     return df[df['x_real_ip'].isin(high_vol_ips)]
 
 def summarize_detection(name, df, platform_col='platform'):
